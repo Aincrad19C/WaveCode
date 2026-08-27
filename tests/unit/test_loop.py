@@ -3,9 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from tests.conftest import make_settings
-from tests.fakes.llm import RaisingLLM, ScriptedLLM, assistant_text, assistant_tools
-from tests.fakes.sink import RecordingSink
 
 import coding_agent.agent.loop as loop_module
 from coding_agent.agent.loop import AgentLoop
@@ -37,6 +34,9 @@ from coding_agent.tools.builtin import all_builtin_tools
 from coding_agent.tools.executor import ToolExecutor
 from coding_agent.tools.registry import ToolRegistry
 from coding_agent.tools.workspace import Workspace
+from fakes.llm import RaisingLLM, ScriptedLLM, assistant_text, assistant_tools
+from fakes.settings import make_settings
+from fakes.sink import RecordingSink
 
 
 def build_loop(llm: LLMClient, tmp_path: Path, sink: RecordingSink,

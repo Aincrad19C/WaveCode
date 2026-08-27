@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 
 import pytest
-from tests.fakes.sink import RecordingSink
 
 from coding_agent.domain.messages import ToolCallRequest
 from coding_agent.errors import ConfigError
@@ -20,6 +19,7 @@ from coding_agent.tools.builtin.write_file import WriteFileTool
 from coding_agent.tools.executor import ToolExecutor
 from coding_agent.tools.registry import ToolRegistry
 from coding_agent.tools.workspace import Workspace
+from fakes.sink import RecordingSink
 
 
 @pytest.fixture()
