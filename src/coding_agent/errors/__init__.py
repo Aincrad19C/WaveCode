@@ -1,0 +1,41 @@
+"""Exception hierarchy (docs/02 §1, docs/08)."""
+
+from coding_agent.errors.hierarchy import (
+    AgentError,
+    CancelledError,
+    ConfigError,
+    EmptyResponseError,
+    LLMAuthError,
+    LLMBadResponseError,
+    LLMError,
+    LLMRateLimitError,
+    LLMTimeoutError,
+    LLMUnavailableError,
+    ParseError,
+    SchemaValidationError,
+    ToolCallParseError,
+    ToolError,
+    ToolPathError,
+    ToolTimeoutError,
+    UnknownToolError,
+)
+
+__all__ = [
+    "AgentError",
+    "CancelledError",
+    "ConfigError",
+    "EmptyResponseError",
+    "LLMAuthError",
+    "LLMBadResponseError",
+    "LLMError",
+    "LLMRateLimitError",
+    "LLMTimeoutError",
+    "LLMUnavailableError",
+    "ParseError",
+    "SchemaValidationError",
+    "ToolCallParseError",
+    "ToolError",
+    "ToolPathError",
+    "ToolTimeoutError",
+    "UnknownToolError",
+]

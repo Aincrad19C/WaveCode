@@ -16,7 +16,7 @@
 | 6 | [06-parsing.md](./06-parsing.md) | 模型输出解析与参数校验 |
 | 7 | [07-termination.md](./07-termination.md) | 循环终止条件 |
 | 8 | [08-error-handling.md](./08-error-handling.md) | 错误分类、重试、不崩溃策略 |
-| 9 | [09-cli-ui.md](./09-cli-ui.md) | 蓝色主题 CLI、像素鲸鱼娘动画、交互 |
+| 9 | [09-cli-ui.md](./09-cli-ui.md) | 蓝色主题 CLI（v1.1 起暂不绘制像素立绘） |
 | 10 | [10-implementation-spec.md](./10-implementation-spec.md) | **一键实现圣经**：目录、文件职责、接线、验收 |
 | 11 | [11-wire-format.md](./11-wire-format.md) | DeepSeek messages JSON 契约（防 400） |
 | 12 | [12-whalechan-pixel.md](./12-whalechan-pixel.md) | 终端半块像素渲染：可行性与精灵规格 |
@@ -29,6 +29,6 @@
 2. **禁止** 使用 Code Interpreter、Files API 等服务端托管执行。
 3. **禁止** 将 API Key 写入源代码、文档、测试、README、提交信息。只允许环境变量或未入库的 `.env`。
 4. 循环、工具执行、解析、上下文、终止、错误处理必须是本仓库自己的类，而不是 SDK 内部 agent 循环。
-5. 允许：`httpx`、`pydantic`、`rich`、`python-dotenv`、可选 `pillow`（仅加载 PNG 精灵），以及 DeepSeek 官方 HTTP Chat Completions + 原生 `tools` 字段。
+5. 允许：`httpx`、`pydantic`、`rich`、`python-dotenv`，以及 DeepSeek 官方 HTTP Chat Completions + 原生 `tools` 字段。
 6. 语言：Python 3.11+。布局：`src/coding_agent/`。
 7. 类设计以 `02-class-design.md` 为准；循环以 `03-agent-loop.md` 为准；文件清单以 `10-implementation-spec.md` 为准。三者冲突时，以循环不变量 + 题目硬约束为准，并在代码注释中写明取舍。

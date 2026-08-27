@@ -1,6 +1,6 @@
 # 变更记录（Changelog）
 
-当前版本：**v0.2.0**
+当前版本：**v1.2.0**
 
 版本号为三位 `v大功能.小功能.小bug`（例如 `v0.1.0`），只递增、不改写已发布条目。
 
@@ -21,6 +21,45 @@
 设计阶段视为一次交付，不保留中间草稿版本。第一次可运行实现合并进主线时升 **大功能** 到 `v1.0.0`。
 
 ---
+
+## v1.2.0 — 2026-08-27
+
+**类型：** 小功能
+
+- CLI 状态改称 **Wavemio 思考中**，不再显示模型推理原文。工具进行中只留一行活动（如 `Read hello.py`），最终答案一次性给出，观感接近 Claude Code。
+
+## v1.1.0 — 2026-08-27
+
+**类型：** 小功能
+
+- 暂时去掉终端像素鲸鱼娘立绘与换帧动画。CLI 改为蓝色文本界面：用户/助手/工具卡片 + 思考中转圈；先保证能正常输入、完成任务。
+
+## v1.0.1 — 2026-08-27
+
+**类型：** 小 bug
+
+- 启动时若环境变量是 Clash 常见的 `socks://127.0.0.1:7897`，httpx 会因未知 scheme 直接崩溃。
+  现改为尝试改写成 HTTP 代理；仍失败则忽略环境代理并继续启动。
+
+## v1.0.0 — 2026-08-27
+
+**类型：** 大功能（第一版可运行实现落地）
+
+- 手写 Agent 循环（`agent/loop.py`，按 docs/03 状态机）：原生 tool calling、工具结果回灌、
+  续写/空回复/内容过滤分支、取消后自动修复 tool 配对。
+- 7 个内置工具（read_file / write_file / edit_file / list_dir / glob_search / grep / bash）+
+  工作区沙箱（路径逃逸拒绝）+ bash 子进程密钥剥离与超时进程组清理。
+- 上下文管理：启发式 token 估计（CJK/ASCII 差分 + usage 校准）、TruncatingContextPolicy
+  （保护块滑动窗口 + 头 70%/尾 20% 截断 + 省略摘要）、压缩视图写回。
+- 解析管道：NativeToolCallParser（JSON 修复、finish_reason 规范化）+ ContentFallbackParser
+  （XML 块 / 围栏 JSON 兜底）+ 保守 `repair_json_object`。
+- 终止条件组合（cancelled / llm_failures / wallclock / context_overflow / max_turns / natural）。
+- DeepSeekClient：httpx + SSE 流式拼接（StreamAssembler）、HTTP 状态码映射异常谱系、
+  指数退避重试（尊重 Retry-After）、错误信息密钥脱敏。
+- CLI：蓝色主题 REPL / one-shot、像素鲸鱼娘（半块 `▀` 真彩渲染，8 组动画 + 工具道具、
+  内嵌调色板精灵、非 TTY/NO_COLOR/ASCII 降级）、JSONL 会话日志、退出码 0/1/2/3。
+- 单元测试 107 项全部离线（Fake LLM），覆盖循环、解析、沙箱、上下文、终止、重试、像素渲染、
+  wire 契约与仓库卫生检查。
 
 ## v0.2.0 — 2026-08-27
 

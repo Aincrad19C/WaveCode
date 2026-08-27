@@ -1,0 +1,245 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+from tests.conftest import make_settings
+from tests.fakes.llm import RaisingLLM, ScriptedLLM, assistant_text, assistant_tools
+from tests.fakes.sink import RecordingSink
+
+import coding_agent.agent.loop as loop_module
+from coding_agent.agent.loop import AgentLoop
+from coding_agent.agent.state import LoopState
+from coding_agent.app.system_prompt import build_system_prompt
+from coding_agent.config.settings import Settings
+from coding_agent.context.estimator import HeuristicTokenEstimator
+from coding_agent.context.manager import ContextManager
+from coding_agent.context.policy import TruncatingContextPolicy
+from coding_agent.context.store import ConversationStore
+from coding_agent.domain.events import FinalAnswer, SessionEnded, ToolExecutionFinished
+from coding_agent.domain.messages import ChatMessage, Role
+from coding_agent.errors import LLMAuthError, LLMUnavailableError
+from coding_agent.llm.client import LLMClient
+from coding_agent.llm.types import FinishReason
+from coding_agent.parsing.fallback import ContentFallbackParser
+from coding_agent.parsing.native import NativeToolCallParser
+from coding_agent.parsing.pipeline import ParserPipeline
+from coding_agent.termination.composite import AnyOfTermination
+from coding_agent.termination.conditions import (
+    CancelledCondition,
+    ConsecutiveFailureCondition,
+    ContextOverflowCondition,
+    MaxTurnsCondition,
+    NaturalCompletionCondition,
+    WallClockCondition,
+)
+from coding_agent.tools.builtin import all_builtin_tools
+from coding_agent.tools.executor import ToolExecutor
+from coding_agent.tools.registry import ToolRegistry
+from coding_agent.tools.workspace import Workspace
+
+
+def build_loop(llm: LLMClient, tmp_path: Path, sink: RecordingSink,
+               settings: Settings | None = None) -> AgentLoop:
+    settings = settings or make_settings(workdir=tmp_path)
+    workspace = Workspace(tmp_path)
+    registry = ToolRegistry()
+    for tool in all_builtin_tools():
+        registry.register(tool)
+    executor = ToolExecutor(
+        registry, workspace,
+        timeout_s=settings.bash_timeout_s, output_limit=settings.tool_output_max_chars,
+    )
+    estimator = HeuristicTokenEstimator()
+    send_budget = settings.max_context_tokens - settings.completion_reserve_tokens
+    system = ChatMessage(
+        role=Role.SYSTEM,
+        content=build_system_prompt(workspace_root=str(workspace.root),
+                                    tool_names=registry.names()),
+    )
+    context = ContextManager(
+        store=ConversationStore(system),
+        policy=TruncatingContextPolicy(
+            send_budget=send_budget,
+            tool_output_max_chars=settings.tool_output_max_chars,
+            estimator=estimator,
+        ),
+        estimator=estimator,
+        send_budget=send_budget,
+    )
+    termination = AnyOfTermination([
+        CancelledCondition(),
+        ConsecutiveFailureCondition(settings.max_consecutive_failures),
+        WallClockCondition(settings.max_wallclock_s),
+        ContextOverflowCondition(settings.max_context_tokens),
+        MaxTurnsCondition(settings.max_turns),
+        NaturalCompletionCondition(),
+    ])
+    return AgentLoop(
+        llm=llm,
+        context=context,
+        executor=executor,
+        registry=registry,
+        parser=ParserPipeline([NativeToolCallParser(), ContentFallbackParser()]),
+        termination=termination,
+        settings=settings,
+        sink=sink,
+    )
+
+
+def test_scenario_a_direct_answer(tmp_path: Path) -> None:
+    llm = ScriptedLLM([assistant_text("done")])
+    sink = RecordingSink()
+    loop = build_loop(llm, tmp_path, sink)
+    result = loop.run("say done")
+    assert result == "done"
+    assert len(llm.calls) == 1
+    assert sink.of_type(ToolExecutionFinished) == []
+    final = sink.of_type(FinalAnswer)
+    assert len(final) == 1 and final[0].reason == "natural"
+    assert loop.last_end_reason == "natural"
+
+
+def test_scenario_b_read_then_answer(tmp_path: Path) -> None:
+    (tmp_path / "a.py").write_text("print('hi')\n")
+    llm = ScriptedLLM([
+        assistant_tools([("read_file", {"path": "a.py"})]),
+        assistant_text("it prints hi"),
+    ])
+    sink = RecordingSink()
+    loop = build_loop(llm, tmp_path, sink)
+    result = loop.run("what does a.py do?")
+    assert result == "it prints hi"
+    assert len(llm.calls) == 2
+    executions = sink.of_type(ToolExecutionFinished)
+    assert len(executions) == 1 and executions[0].result.ok
+    # history must contain the tool observation, correctly paired
+    history = loop.context.store().all()
+    tool_messages = [m for m in history if m.role is Role.TOOL]
+    assert len(tool_messages) == 1
+    assert tool_messages[0].tool_call_id == "call_0"
+    assert "print" in (tool_messages[0].content or "")
+
+
+def test_scenario_c_tool_failure_feeds_back_and_continues(tmp_path: Path) -> None:
+    llm = ScriptedLLM([
+        assistant_tools([("read_file", {"path": "missing.py"})]),
+        assistant_text("the file does not exist"),
+    ])
+    sink = RecordingSink()
+    loop = build_loop(llm, tmp_path, sink)
+    result = loop.run("read missing.py")
+    assert result == "the file does not exist"
+    assert len(llm.calls) == 2
+    executions = sink.of_type(ToolExecutionFinished)
+    assert not executions[0].result.ok
+    # the second request must let the model see the error text
+    second_request = llm.calls[1]
+    tool_msgs = [m for m in second_request.messages if m.role is Role.TOOL]
+    assert any("ENOENT" in (m.content or "") for m in tool_msgs)
+
+
+def test_scenario_d_max_turns_stops_after_tools(tmp_path: Path) -> None:
+    (tmp_path / "a.py").write_text("x\n")
+    llm = ScriptedLLM([
+        assistant_tools([("read_file", {"path": "a.py"})]),
+        assistant_tools([("read_file", {"path": "a.py"})]),  # would be turn 2
+    ])
+    sink = RecordingSink()
+    loop = build_loop(llm, tmp_path, sink, make_settings(workdir=tmp_path, max_turns=1))
+    result = loop.run("loop forever")
+    assert len(llm.calls) == 1  # exactly max_turns LLM calls
+    assert loop.last_end_reason == "max_turns"
+    assert "达到最大推理轮次" in result
+    final = sink.of_type(FinalAnswer)
+    assert len(final) == 1 and final[0].reason == "max_turns"
+
+
+def test_cancelled_before_first_llm_call(tmp_path: Path,
+                                         monkeypatch: pytest.MonkeyPatch) -> None:
+    state = LoopState()
+    state.cancel()
+    monkeypatch.setattr(loop_module, "LoopState", lambda: state)
+    llm = ScriptedLLM([assistant_text("never")])
+    sink = RecordingSink()
+    loop = build_loop(llm, tmp_path, sink)
+    result = loop.run("task")
+    assert len(llm.calls) == 0
+    assert loop.last_end_reason == "cancelled"
+    assert result == "已取消。"
+
+
+def test_auth_error_ends_immediately(tmp_path: Path) -> None:
+    llm = RaisingLLM(LLMAuthError("HTTP 401"))
+    sink = RecordingSink()
+    loop = build_loop(llm, tmp_path, sink)
+    result = loop.run("task")
+    assert loop.last_end_reason == "auth"
+    assert "401" in result
+    assert llm.calls == 1  # no retry loop at this layer
+
+
+def test_llm_failures_accumulate_then_stop(tmp_path: Path) -> None:
+    llm = RaisingLLM(LLMUnavailableError("HTTP 503"))
+    sink = RecordingSink()
+    loop = build_loop(llm, tmp_path, sink, make_settings(
+        workdir=tmp_path, max_consecutive_failures=2))
+    result = loop.run("task")
+    assert loop.last_end_reason == "llm_failures"
+    assert llm.calls == 2
+    assert "503" in result
+
+
+def test_empty_replies_stop_after_two(tmp_path: Path) -> None:
+    llm = ScriptedLLM([assistant_text(""), assistant_text("")])
+    sink = RecordingSink()
+    loop = build_loop(llm, tmp_path, sink)
+    result = loop.run("task")
+    assert loop.last_end_reason == "empty"
+    assert "空回复" in result
+    assert len(llm.calls) == 2
+
+
+def test_length_continuation_used_once(tmp_path: Path) -> None:
+    llm = ScriptedLLM([
+        assistant_text("part one", finish=FinishReason.LENGTH),
+        assistant_text("part two"),
+    ])
+    sink = RecordingSink()
+    loop = build_loop(llm, tmp_path, sink)
+    result = loop.run("long story")
+    assert result == "part two"
+    # continuation nudge was appended between the calls
+    second = llm.calls[1]
+    user_msgs = [m.content for m in second.messages if m.role is Role.USER]
+    assert any("Continue from where you left off" in (c or "") for c in user_msgs)
+
+
+def test_tool_history_pairing_invariant(tmp_path: Path) -> None:
+    (tmp_path / "a.py").write_text("x\n")
+    llm = ScriptedLLM([
+        assistant_tools([("read_file", {"path": "a.py"}), ("list_dir", {})]),
+        assistant_text("ok"),
+    ])
+    sink = RecordingSink()
+    loop = build_loop(llm, tmp_path, sink)
+    loop.run("task")
+    # before every LLM call each assistant.tool_calls has matching tool msgs
+    for request in llm.calls:
+        messages = list(request.messages)
+        for i, message in enumerate(messages):
+            if message.role is Role.ASSISTANT and message.tool_calls:
+                following = messages[i + 1 : i + 1 + len(message.tool_calls)]
+                assert [m.role for m in following] == [Role.TOOL] * len(message.tool_calls)
+                assert [m.tool_call_id for m in following] == [
+                    c.id for c in message.tool_calls
+                ]
+
+
+def test_session_ended_always_emitted(tmp_path: Path) -> None:
+    llm = ScriptedLLM([assistant_text("done")])
+    sink = RecordingSink()
+    loop = build_loop(llm, tmp_path, sink)
+    loop.run("task")
+    ended = sink.of_type(SessionEnded)
+    assert len(ended) == 1 and ended[0].reason == "natural"
