@@ -167,7 +167,7 @@ wavemio run "task text"
 wavemio run -           # 从 stdin 读任务
 ```
 
-`--version` 打印 `wavemio 0.1.0`（数字读 `coding_agent.__version__`，与 `docs/CHANGELOG.md` 最新版本一致）。  
+`--version` 打印 `wavemio 0.2.0`（数字读 `coding_agent.__version__`，与 `docs/CHANGELOG.md` 最新版本一致）。  
 `cli/branding.py`：`PRODUCT_NAME = "Wavemio"`、`CLI_NAME = "wavemio"`。
 
 斜杠命令：

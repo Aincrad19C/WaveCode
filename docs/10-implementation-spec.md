@@ -14,7 +14,7 @@
 
 建议提交粒度（实现者可合并，但顺序不要乱）：
 
-1. 工程骨架：`pyproject.toml`、`.gitignore`、`.env.example`、空包
+1. 工程骨架 + CI/CD：`pyproject.toml`、空包、`--version`、GitHub Actions
 2. errors + domain + settings
 3. Workspace + 全部 builtin tools + 单测
 4. Parser + StreamAssembler + 单测
@@ -30,11 +30,16 @@
 ```
 Coding_Agent/
   pyproject.toml
-  README.md                 # 填写如何安装运行；不要写密钥
+  README.md                 # 安装、测试、诚实的能力边界；不要写密钥
   .gitignore
   .env.example
+  .github/
+    dependabot.yml
+    workflows/
+      ci.yml                # Ruff + pytest + build
+      cd.yml                # 标签 → wheel + GitHub Release
   src/coding_agent/
-    __init__.py             # __version__ 必须等于 docs/CHANGELOG.md 最新版本，当前 "0.1.0"
+    __init__.py             # __version__ 必须等于 docs/CHANGELOG.md 最新版本，当前 "0.2.0"
     __main__.py             # from coding_agent.cli.app import main; main()
     py.typed
     app/
@@ -117,6 +122,9 @@ Coding_Agent/
   tests/
     conftest.py
     unit/
+      test_version.py
+      test_cli.py
+      test_hygiene.py
       test_workspace.py
       test_tools.py
       test_parser.py
@@ -142,7 +150,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "wavemio"
-version = "0.1.0"
+version = "0.2.0"
 description = "Wavemio: a from-scratch CLI coding agent for DeepSeek"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -155,7 +163,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+dev = [
+  "pytest>=8.0",
+  "pytest-cov>=5.0",
+  "pytest-socket>=0.7",
+  "ruff>=0.6",
+]
 sprites = ["pillow>=10.0"]
 
 [project.scripts]
@@ -169,6 +182,8 @@ where = ["src"]
 pythonpath = ["src"]
 testpaths = ["tests"]
 ```
+
+其余 `[tool.pytest.ini_options]` / `[tool.ruff]` / 覆盖率以仓库 `pyproject.toml` 为准：默认禁网、行宽 100。CI/CD 见 `.github/workflows/`。
 
 ## 4. 系统提示词 `app/system_prompt.py`
 
@@ -296,10 +311,10 @@ class ScriptedLLM(LLMClient):
 
 - 项目一句话 + 「自研循环，无 agent 框架」
 - Python 3.11+
-- `pip install -e .`
-- `export DEEPSEEK_API_KEY=...` 或复制 `.env.example` 为 `.env`
-- `wavemio run "Create hello.py that prints hello"`
-- `wavemio` 进 REPL
+- `pip install -e ".[dev]"`
+- `ruff check src tests` / `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest`
+- `export DEEPSEEK_API_KEY=...` 或复制 `.env.example` 为 `.env`（循环落地后才需要）
+- 循环落地后：`wavemio run "..."` 与 `wavemio` 进 REPL；落地前不要把它们写成已可用
 - 注明产品名 Wavemio、CLI 吉祥物为社区二创鲸鱼娘像素风，参考 `Neko3000/deepseek-whalechan`（非官方）
 - 不出现真实 key、不出现题目以外的夸大宣传
 
@@ -309,7 +324,7 @@ class ScriptedLLM(LLMClient):
 
 功能：
 
-- [ ] `wavemio --help` 可用
+- [x] `wavemio --help` 可用
 - [ ] 缺 key 时 exit 2 且无 traceback 洪水
 - [ ] REPL boot 为像素鲸鱼娘（鳍耳+蓝发可辨认），蓝色边框；**禁止机器猫 ASCII**
 - [ ] think 状态 Live 换帧（≥4 帧）
@@ -329,7 +344,7 @@ class ScriptedLLM(LLMClient):
 
 测试：
 
-- [ ] `wavemio --version` 与 `docs/CHANGELOG.md` 最新版本一致
+- [x] `wavemio --version` 与 `docs/CHANGELOG.md` 最新版本一致
 - [ ] `pytest -q` 全绿，且默认不访问网络（httpx 未 mock 的测试不得实连）
 
 ## 10. 各文件职责速查（防止空文件）
@@ -380,6 +395,9 @@ CLI 参数覆盖 Settings（workdir、model、think、max-turns、verbose）。
 __pycache__/
 *.py[cod]
 .pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
 .mypy_cache/
 .ruff_cache/
 .venv/

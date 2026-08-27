@@ -1,6 +1,6 @@
 # 变更记录（Changelog）
 
-当前版本：**v0.1.0**
+当前版本：**v0.2.0**
 
 版本号为三位 `v大功能.小功能.小bug`（例如 `v0.1.0`），只递增、不改写已发布条目。
 
@@ -14,13 +14,20 @@
 
 1. 每次改动（含只改文档）都必须新增一条，日期用当天（北京时间）。
 2. 一条记录只对应一次版本跳动；同一天多次独立改动就发多个版本，不要把不相关的事揉进一条。
-3. 实现代码的 `__version__`、`pyproject.toml` 的 `version`、`wavemio --version` **必须与本文件最新版本一致**（不含 `v` 前缀，如 `0.1.0`）。
+3. 实现代码的 `__version__`、`pyproject.toml` 的 `version`、`wavemio --version` **必须与本文件最新版本一致**（不含 `v` 前缀，如 `0.2.0`）。
 4. 产品显示名为 **Wavemio**；Python 包名仍是 `coding_agent`。
 5. 未实现的计划不要写进 Changelog；只记录已经落到仓库里的变化。
 
 设计阶段视为一次交付，不保留中间草稿版本。第一次可运行实现合并进主线时升 **大功能** 到 `v1.0.0`。
 
 ---
+
+## v0.2.0 — 2026-08-27
+
+**类型：** 小功能
+
+- 接入 GitHub Actions CI/CD：`.github/workflows/ci.yml` 跑 Ruff + pytest（禁网）+ 构建 wheel；`.github/workflows/cd.yml` 在 `v*` 标签上发布 GitHub Release（不发 PyPI）。
+- 落地工程骨架：`pyproject.toml`、`src/coding_agent/`、`--help` / `--version`。
 
 ## v0.1.0 — 2026-08-27
 
