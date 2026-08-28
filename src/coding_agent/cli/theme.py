@@ -1,33 +1,36 @@
-"""Blue theme tokens (docs/09 §1)."""
+"""Ocean palette for the Wavemio CLI (blue sea + foam)."""
 
 from __future__ import annotations
 
 from rich.theme import Theme
 
-UI_BG = "#0B1220"
-UI_PRIMARY = "#3B82F6"
-UI_DEEP = "#1D4ED8"
-UI_CYAN = "#22D3EE"
-UI_ICE = "#93C5FD"
-UI_TEXT = "#E2E8F0"
-UI_OK = "#34D399"
-UI_WARN = "#FBBF24"
-UI_ERR = "#F87171"
-UI_TOOL = "#60A5FA"
+# Abyss → horizon → foam. Keep enough contrast on both dark and light terminals.
+UI_ABYSS = "#061018"
+UI_DEEP = "#0B4F7A"
+UI_PRIMARY = "#1A7FBF"
+UI_CYAN = "#3EC8E8"
+UI_FOAM = "#D7F4FF"
+UI_ICE = "#8EC8E6"
+UI_TEXT = "#E7F3FA"
+UI_OK = "#3DDC97"
+UI_WARN = "#F5C15A"
+UI_ERR = "#FF7B7B"
+UI_TOOL = "#5EB5E0"
 
 THEME = Theme(
     {
-        "prompt": f"bold {UI_PRIMARY}",
-        "title": f"bold {UI_PRIMARY}",
+        "prompt": f"bold {UI_CYAN}",
+        "title": f"bold {UI_FOAM}",
         "thinking": f"italic {UI_ICE}",
         "reasoning": f"italic {UI_ICE}",
         "assistant": UI_TEXT,
         "tool": UI_TOOL,
         "success": UI_OK,
         "error": UI_ERR,
-        "muted": "dim " + UI_ICE,
-        "mascot": UI_CYAN,
+        "muted": UI_ICE,
         "warn": UI_WARN,
-        "user": UI_DEEP,
+        "user": UI_CYAN,
+        "wave": UI_PRIMARY,
+        "foam": UI_FOAM,
     }
 )

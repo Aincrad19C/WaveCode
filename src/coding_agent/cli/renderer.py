@@ -1,20 +1,17 @@
-"""RichEventSink: compact Claude-Code-style activity (docs/09 §7).
-
-Show what Wavemio is doing right now (thinking / which tool), never dump
-reasoning tokens or streaming thought. Final answers appear once, as a block.
-"""
+"""Event sinks: scrolling RichEventSink (pipes / one-shot) and TuiEventSink."""
 
 from __future__ import annotations
 
 import json
 
 from rich.console import Console
-from rich.panel import Panel
 from rich.status import Status
 from rich.text import Text
 
-from coding_agent.cli.branding import PRODUCT_NAME
-from coding_agent.cli.theme import UI_DEEP, UI_PRIMARY
+from coding_agent.cli.branding import GLYPH_WAVE, PRODUCT_NAME
+from coding_agent.cli.chrome import activity_line, ocean_banner, ocean_panel
+from coding_agent.cli.theme import UI_CYAN, UI_ERR, UI_ICE, UI_PRIMARY
+from coding_agent.cli.view import ChatView
 from coding_agent.domain.events import (
     AgentEvent,
     AgentFailed,
@@ -52,53 +49,46 @@ class RichEventSink:
             handler(event)
 
     def _on_SessionStarted(self, event: SessionStarted) -> None:
-        self.console.print(
-            Panel(
-                Text(f"{PRODUCT_NAME} · DeepSeek", style="title"),
-                border_style=UI_PRIMARY,
-                expand=False,
-            )
-        )
+        ocean_banner(self.console)
 
     def _on_UserMessageAccepted(self, event: UserMessageAccepted) -> None:
-        self.console.print(Panel(event.text, title="你", border_style=UI_DEEP, expand=False))
+        self.console.print(ocean_panel(event.text, title="你", border=UI_PRIMARY))
 
     def _on_LLMRequestStarted(self, event: LLMRequestStarted) -> None:
-        self._set_status(f"{PRODUCT_NAME} 思考中…")
+        self._set_status(f"{GLYPH_WAVE} {PRODUCT_NAME} 思考中…")
 
     def _on_ToolCallScheduled(self, event: ToolCallScheduled) -> None:
         activity = describe_tool(event.call)
         self._current_activity = activity
-        self._set_status(f"{PRODUCT_NAME} {activity}…")
+        self._set_status(f"{GLYPH_WAVE} {PRODUCT_NAME} {activity}…")
 
     def _on_ToolExecutionFinished(self, event: ToolExecutionFinished) -> None:
         self._stop_status()
         result = event.result
         label = self._current_activity or result.name
-        if result.ok:
-            self.console.print(Text(f"● {label}", style="success"))
-        else:
+        self.console.print(activity_line(ok=result.ok, label=label))
+        if not result.ok:
             summary = (result.content.splitlines()[0] if result.content else "failed")[:80]
-            self.console.print(Text(f"● {label}", style="error"))
-            self.console.print(Text(f"  {summary}", style="muted"))
+            self.console.print(Text(f"     {summary}", style="muted"))
 
     def _on_ContextCompacted(self, event: ContextCompacted) -> None:
-        self.console.print(Text("[上下文压缩]", style="muted"))
+        self.console.print(Text(f"  {GLYPH_WAVE} 上下文压缩", style="muted"))
 
     def _on_FinalAnswer(self, event: FinalAnswer) -> None:
         self._stop_status()
         if event.text:
-            self.console.print(
-                Panel(event.text, title=PRODUCT_NAME, border_style=UI_PRIMARY, expand=False)
-            )
+            self.console.print()
+            self.console.print(ocean_panel(event.text, title=PRODUCT_NAME, border=UI_CYAN))
 
     def _on_AgentWarned(self, event: AgentWarned) -> None:
         self._stop_status()
-        self.console.print(Text(f"警告：{event.message}", style="warn"))
+        self.console.print(Text(f"  {GLYPH_WAVE} {event.message}", style="warn"))
 
     def _on_AgentFailed(self, event: AgentFailed) -> None:
         self._stop_status()
-        self.console.print(Text(f"失败：{event.message}", style="error"))
+        self.console.print(
+            ocean_panel(event.message, title="失败", border=UI_ERR)
+        )
 
     def _on_SessionEnded(self, event: AgentEvent) -> None:
         self._stop_status()
@@ -106,16 +96,70 @@ class RichEventSink:
     def _set_status(self, text: str) -> None:
         if not self.console.is_terminal:
             return
+        styled = Text(text, style=UI_ICE)
         if self._status is None:
-            self._status = self.console.status(Text(text, style="muted"))
+            self._status = self.console.status(styled, spinner="dots", spinner_style=UI_CYAN)
             self._status.start()
         else:
-            self._status.update(Text(text, style="muted"))
+            self._status.update(styled)
 
     def _stop_status(self) -> None:
         if self._status is not None:
             self._status.stop()
             self._status = None
+
+
+class TuiEventSink:
+    """Mutate ChatView instead of printing; used by the alternate-screen TUI."""
+
+    def __init__(self, view: ChatView) -> None:
+        self.view = view
+        self._current_activity = ""
+
+    def on_event(self, event: AgentEvent) -> None:
+        handler = getattr(self, f"_on_{type(event).__name__}", None)
+        if handler is not None:
+            handler(event)
+
+    def _on_UserMessageAccepted(self, event: UserMessageAccepted) -> None:
+        self.view.append("user", event.text)
+
+    def _on_LLMRequestStarted(self, event: LLMRequestStarted) -> None:
+        self.view.set_status(f"{GLYPH_WAVE} {PRODUCT_NAME} 思考中…")
+
+    def _on_ToolCallScheduled(self, event: ToolCallScheduled) -> None:
+        activity = describe_tool(event.call)
+        self._current_activity = activity
+        self.view.set_status(f"{GLYPH_WAVE} {PRODUCT_NAME} {activity}…")
+
+    def _on_ToolExecutionFinished(self, event: ToolExecutionFinished) -> None:
+        result = event.result
+        label = self._current_activity or result.name
+        text = label
+        if not result.ok:
+            summary = (result.content.splitlines()[0] if result.content else "failed")[:80]
+            text = f"{label}\n{summary}"
+        self.view.append("tool", text, ok=result.ok)
+
+    def _on_ContextCompacted(self, event: ContextCompacted) -> None:
+        self.view.append("note", "上下文压缩")
+
+    def _on_FinalAnswer(self, event: FinalAnswer) -> None:
+        self.view.set_status("")
+        if event.text:
+            self.view.append("assistant", event.text)
+
+    def _on_AgentWarned(self, event: AgentWarned) -> None:
+        self.view.set_status("")
+        self.view.append("note", event.message)
+
+    def _on_AgentFailed(self, event: AgentFailed) -> None:
+        self.view.set_status("")
+        self.view.append("error", event.message)
+
+    def _on_SessionEnded(self, event: AgentEvent) -> None:
+        self.view.set_status("")
+        self.view.set_busy(False)
 
 
 def describe_tool(call: ToolCallRequest) -> str:

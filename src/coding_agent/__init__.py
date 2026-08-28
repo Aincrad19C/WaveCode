@@ -1,3 +1,3 @@
 """Wavemio: a from-scratch CLI coding agent."""
 
-__version__ = "1.2.1"
+__version__ = "2.3.0"

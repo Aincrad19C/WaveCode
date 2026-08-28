@@ -46,3 +46,15 @@ def test_symlink_escape_raises(tmp_path: Path) -> None:
 def test_relpath(tmp_path: Path) -> None:
     ws = Workspace(tmp_path)
     assert ws.relpath(tmp_path / "sub" / "f.py") == "sub/f.py"
+
+
+def test_cwd_starts_at_root_and_can_leave(tmp_path: Path) -> None:
+    ws = Workspace(tmp_path)
+    assert ws.cwd == tmp_path.resolve()
+    parent = tmp_path.resolve().parent
+    ws.set_cwd(parent)
+    assert ws.cwd == parent
+    ws.reset_cwd()
+    assert ws.cwd == tmp_path.resolve()
+    ws.set_cwd(tmp_path / "no-such-dir")
+    assert ws.cwd == tmp_path.resolve()

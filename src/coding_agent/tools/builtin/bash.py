@@ -17,6 +17,7 @@ from coding_agent.errors import ToolError, ToolTimeoutError
 from coding_agent.tools.base import Tool, ToolContext
 
 MAX_TIMEOUT_S = 120
+_CWD_MARK = "__WAVEMIO_CWD__:"
 
 _SENSITIVE_KEY_RE = re.compile(r"(?i)(key|token|secret|password|passwd|authorization)$")
 _ALWAYS_REMOVE = {"DEEPSEEK_API_KEY"}
@@ -37,8 +38,9 @@ def sanitized_env() -> dict[str, str]:
 class BashTool(Tool):
     name = "bash"
     description = (
-        "Run a shell command with cwd at the workspace root. "
-        "Returns exit_code, stdout and stderr. Do not leave the workspace."
+        "Run a shell command. The working directory starts at the workspace root "
+        "and persists across calls (cd is remembered). "
+        "Returns exit_code, stdout and stderr."
     )
     parameters = {
         "type": "object",
@@ -57,11 +59,13 @@ class BashTool(Tool):
             if banned in command:
                 raise ToolError(f"refused: command contains dangerous pattern {banned!r}")
         timeout = min(MAX_TIMEOUT_S, float(args.get("timeout_s", ctx.timeout_s)))
+        cwd = ctx.workspace.cwd if ctx.workspace.cwd.is_dir() else ctx.workspace.root
+        wrapped = f"{command}\nprintf '%s%s\\n' '{_CWD_MARK}' \"$(pwd)\""
         try:
             proc = subprocess.run(
-                command,
+                wrapped,
                 shell=True,
-                cwd=str(ctx.workspace.root),
+                cwd=str(cwd),
                 env=sanitized_env(),
                 capture_output=True,
                 text=True,
@@ -71,7 +75,10 @@ class BashTool(Tool):
         except subprocess.TimeoutExpired as exc:
             self._kill_children(exc)
             raise ToolTimeoutError(f"TIMEOUT after {timeout:g}s: {command}") from None
-        return f"exit_code: {proc.returncode}\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+        stdout, new_cwd = _split_cwd_marker(proc.stdout)
+        if new_cwd:
+            ctx.workspace.set_cwd(new_cwd)
+        return f"exit_code: {proc.returncode}\nstdout:\n{stdout}\nstderr:\n{proc.stderr}"
 
     @staticmethod
     def _kill_children(exc: subprocess.TimeoutExpired) -> None:
@@ -83,3 +90,21 @@ class BashTool(Tool):
             os.killpg(os.getpgid(pid), signal.SIGKILL)
         except (ProcessLookupError, PermissionError, OSError):
             pass
+
+
+def _split_cwd_marker(stdout: str) -> tuple[str, str | None]:
+    """Strip the trailing cwd probe so the model never sees the marker."""
+    if not stdout:
+        return stdout, None
+    lines = stdout.splitlines()
+    for i in range(len(lines) - 1, -1, -1):
+        if lines[i].startswith(_CWD_MARK):
+            path = lines[i][len(_CWD_MARK) :]
+            kept = lines[:i]
+            while kept and kept[-1] == "":
+                kept.pop()
+            text = "\n".join(kept)
+            if text:
+                text += "\n"
+            return text, path or None
+    return stdout, None

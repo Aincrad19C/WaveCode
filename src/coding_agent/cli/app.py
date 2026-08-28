@@ -9,7 +9,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from coding_agent import __version__
-from coding_agent.cli.branding import CLI_NAME, PRODUCT_NAME
+from coding_agent.cli.branding import CLI_NAME, GLYPH_WAVE, PRODUCT_NAME
 
 EXIT_OK = 0
 EXIT_CRASH = 1
@@ -75,14 +75,23 @@ def main(argv: Sequence[str] | None = None) -> int:
     if overrides:
         settings = settings.model_copy(update=overrides)
 
-    console = Console(theme=THEME)
-    rich_sink = RichEventSink(console)
+    console = Console(theme=THEME, highlight=False)
+    use_tui = args.command != "run" and console.is_terminal and sys.stdin.isatty()
 
     try:
         log_sink = JsonlLogSink(settings.workdir / settings.log_dir)
-        session = build_session(settings, sinks=[rich_sink, log_sink])
+        if use_tui:
+            from coding_agent.cli.renderer import TuiEventSink
+            from coding_agent.cli.view import ChatView
+
+            view = ChatView()
+            ui_sink = TuiEventSink(view)
+        else:
+            ui_sink = RichEventSink(console)
+            view = None
+        session = build_session(settings, sinks=[ui_sink, log_sink])
     except ConfigError as exc:
-        console.print(f"[error]配置错误：{exc}[/error]")
+        console.print(f"[error]{GLYPH_WAVE} 配置错误：{exc}[/error]")
         return EXIT_CONFIG
 
     try:
@@ -90,6 +99,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             task = sys.stdin.read() if args.task == "-" else args.task
             session.start()
             session.ask(task)
+        elif use_tui and view is not None:
+            from coding_agent.cli.tui import OceanTui
+
+            return OceanTui(session, console, settings, view).run()
         else:
             return Repl(session, console, settings).run()
     except KeyboardInterrupt:

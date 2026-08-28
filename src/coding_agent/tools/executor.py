@@ -32,6 +32,7 @@ class ToolExecutor:
         parallel_readonly: bool = False,
     ) -> None:
         self._registry = registry
+        self.workspace = workspace
         self._ctx = ToolContext(workspace=workspace, timeout_s=timeout_s, output_limit=output_limit)
         self._parallel_readonly = parallel_readonly
 

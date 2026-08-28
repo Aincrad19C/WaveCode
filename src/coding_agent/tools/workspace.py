@@ -16,6 +16,20 @@ from coding_agent.errors import ToolPathError
 class Workspace:
     def __init__(self, root: Path) -> None:
         self.root = root.resolve()
+        self.cwd = self.root
+
+    def set_cwd(self, path: Path | str) -> None:
+        """Remember bash's working directory. May leave ``root`` (bash is not sandboxed)."""
+        candidate = Path(path).expanduser()
+        try:
+            candidate = candidate.resolve()
+        except OSError:
+            return
+        if candidate.is_dir():
+            self.cwd = candidate
+
+    def reset_cwd(self) -> None:
+        self.cwd = self.root
 
     def resolve(self, user_path: str) -> Path:
         candidate = Path(user_path)

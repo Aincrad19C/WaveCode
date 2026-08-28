@@ -6,7 +6,7 @@
 OpenAI Agents SDK 等，也不依赖服务端 Code Interpreter / Files API）；对话历史与上下文管理、
 工具定义与本地执行、模型输出解析、循环终止条件、错误处理全部为本仓库自己的代码。
 
-CLI 为蓝色主题的文本界面（用户/助手/工具卡片 + 思考中转圈）。当前版本不绘制像素立绘。
+CLI 为全屏独占聊天界面（备用屏幕，像 `top`）：左侧吉祥物区留空、工作区信息（目录/模型/轮次）、对话区与底部输入。不绘制像素立绘。管道与 `wavemio run` 仍是滚动文本。
 
 设计文档见 [docs/](./docs/README.md)（00–12 + CHANGELOG）。
 
@@ -34,7 +34,7 @@ export DEEPSEEK_API_KEY=...      # 或：复制 .env.example 为 .env 再填写
 ## 使用
 
 ```bash
-wavemio                          # 交互 REPL（默认）
+wavemio                          # 全屏聊天界面（默认；退出后终端复原）
 wavemio run "在当前目录写一个 hello.py 并运行它"
 wavemio run -                    # 从 stdin 读任务
 wavemio --workdir /path --max-turns 10 --think run "..."

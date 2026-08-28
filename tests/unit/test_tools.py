@@ -198,6 +198,20 @@ def test_bash_denylist(ctx: ToolContext) -> None:
     assert not result.ok and "refused" in result.content
 
 
+def test_bash_cd_persists_and_hides_cwd_marker(ctx: ToolContext, tmp_path: Path) -> None:
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    first = BashTool().run(call("bash", command="cd sub && pwd"), ctx)
+    assert first.ok
+    assert str(sub.resolve()) in first.content
+    assert "__WAVEMIO_CWD__" not in first.content
+    assert ctx.workspace.cwd == sub.resolve()
+    second = BashTool().run(call("bash", command="pwd"), ctx)
+    assert str(sub.resolve()) in second.content
+    BashTool().run(call("bash", command="cd .."), ctx)
+    assert ctx.workspace.cwd == tmp_path.resolve()
+
+
 # -- executor ----------------------------------------------------------------------------
 
 def test_executor_unknown_tool_is_failed_result(tmp_path: Path) -> None:

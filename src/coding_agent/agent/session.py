@@ -22,3 +22,6 @@ class AgentSession:
 
     def reset(self) -> None:
         self.context.store().reset_keeping_system()
+        executor = getattr(self.loop, "executor", None)
+        if executor is not None:
+            executor.workspace.reset_cwd()

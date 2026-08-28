@@ -16,7 +16,7 @@
 | 6 | [06-parsing.md](./06-parsing.md) | 模型输出解析与参数校验 |
 | 7 | [07-termination.md](./07-termination.md) | 循环终止条件 |
 | 8 | [08-error-handling.md](./08-error-handling.md) | 错误分类、重试、不崩溃策略 |
-| 9 | [09-cli-ui.md](./09-cli-ui.md) | 蓝色主题 CLI（v1.1 起暂不绘制像素立绘） |
+| 9 | [09-cli-ui.md](./09-cli-ui.md) | 蓝色主题 CLI（v1.3 为海浪视觉，暂不绘制像素立绘） |
 | 10 | [10-implementation-spec.md](./10-implementation-spec.md) | **一键实现圣经**：目录、文件职责、接线、验收 |
 | 11 | [11-wire-format.md](./11-wire-format.md) | DeepSeek messages JSON 契约（防 400） |
 | 12 | [12-whalechan-pixel.md](./12-whalechan-pixel.md) | 终端半块像素渲染：可行性与精灵规格 |

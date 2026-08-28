@@ -2,3 +2,6 @@
 
 PRODUCT_NAME = "Wavemio"
 CLI_NAME = "wavemio"
+TAGLINE = "DeepSeek coding agent"
+GLYPH_WAVE = "∼"
+GLYPH_FLOW = "∿"
