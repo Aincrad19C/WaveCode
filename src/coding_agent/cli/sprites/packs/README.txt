@@ -6,26 +6,25 @@
   2. 用户   ~/.wavemio/mascots/<包名>/
   3. 工作区 <工作区>/.wavemio/mascots/<包名>/
 
-包内文件（每个动作二选一，同名时 PNG 优先）：
+包内文件（每个动作选一种，同名时 GIF 优先于 PNG 优先于 txt）：
 
-  idle.txt / idle.png      待机
-  think.txt / think.png    思考
-  tool.txt / tool.png      干活 / 调工具
-  ok.txt / ok.png          完成
-  err.txt / err.png        出错
-  palette.txt              仅 txt 帧需要：一行一个  k=#RRGGBB
+  idle.gif / idle.png / idle.txt      待机
+  think.gif / think.png / think.txt   思考
+  tool.gif / tool.png / tool.txt      干活 / 调工具
+  ok.gif / ok.png / ok.txt            完成（可与 idle 相同）
+  err.gif / err.png / err.txt         出错
+  palette.txt                         仅 txt 帧需要：一行一个  k=#RRGGBB
 
-内置 default 是五张空白 24×24 PNG，方便直接覆盖。
-PNG：必须是 24×24、8 位、非隔行。RGB / RGBA / 索引色均可。透明像素（alpha=0）当空白。
-终端不会贴原图，会把像素编成半块字符 ▀。不要用别的尺寸，不会自动缩放。
+内置 default 用 GIF：idle＝待机，think＝问号，tool＝手写，err＝汗；ok 回退到 idle。
+也可以整包换成自己的图，或在用户/工作区目录覆盖同名包。
+GIF / PNG：终端画成 32×32 半块字符 ▀。GIF 会按帧循环；不是 32×32 的图会缩放到画布。透明像素当空白。
 
-txt：24 行 × 24 列，每格一个调色板字母，`.` 透明。以 # 开头的行是注释。
-缺的动作帧会回退到 idle。纯 PNG 包可以没有 palette.txt。
+txt：32 行 × 32 列，每格一个调色板字母，`.` 透明。以 # 开头的行是注释。
+缺的动作帧会回退到 idle。纯 GIF / PNG 包可以没有 palette.txt。
 
-idle / think / tool / ok / err 是动作名，不要拿来当包名。
+idle / think / tool / ok / err 是包内动作帧文件名，不要拿来当包名。动作由任务状态自动切换，不用命令切换。
 
-切换（全屏或 REPL）：
+切换角色包（全屏或 REPL）：
 
-  /mascot                         列出包与当前动作
+  /mascot                         列出可用立绘包
   /mascot <包名>                  换包（例如 default）
-  /mascot idle|think|tool|ok|err  换动作帧

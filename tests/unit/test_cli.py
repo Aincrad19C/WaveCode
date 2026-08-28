@@ -152,6 +152,27 @@ def test_boot_panel_boat_draws_channel() -> None:
     assert "┏" in out
     assert "█" in out
     assert set("▁▂▃▄▅▆▇") & set(out)
+    sailing = boot_panel(80, 24, 0.55)
+    wooded = [
+        span
+        for span in sailing.renderable.spans
+        if span.style and "#a0714a" in str(span.style).lower()
+    ]
+    hull = [
+        span
+        for span in sailing.renderable.spans
+        if span.style and "#6b3f24" in str(span.style).lower()
+    ]
+    sail = [
+        span
+        for span in sailing.renderable.spans
+        if span.style
+        and "#ffffff" in str(span.style).lower()
+        and "on #" not in str(span.style).lower()
+    ]
+    assert wooded
+    assert hull
+    assert sail
     mark = boot_panel(80, 24, 0.85)
     inked = [
         span
@@ -278,10 +299,12 @@ def test_ocean_frame_holds_splash_until_reveal_finishes() -> None:
 
 def test_tui_sink_hides_reasoning_and_keeps_activity() -> None:
     from coding_agent.cli.renderer import TuiEventSink, describe_tool
+    from coding_agent.cli.sprites.bank import reset_bank
     from coding_agent.cli.view import ChatView
     from coding_agent.domain.events import (
         ContentDelta,
         FinalAnswer,
+        LLMRequestStarted,
         ReasoningDelta,
         ToolCallScheduled,
         ToolExecutionFinished,
@@ -292,15 +315,23 @@ def test_tui_sink_hides_reasoning_and_keeps_activity() -> None:
 
     view = ChatView()
     sink = TuiEventSink(view)
+    bank = reset_bank()
+    assert bank.pose == "idle"
     sink.on_event(UserMessageAccepted(text="列出文件"))
+    assert bank.pose == "think"
     sink.on_event(ReasoningDelta(text="secret chain of thought"))
     sink.on_event(ContentDelta(text="partial token"))
     call = ToolCallRequest("1", "list_dir", '{"path": "."}')
     sink.on_event(ToolCallScheduled(call=call))
+    assert bank.pose == "tool"
+    sink.on_event(LLMRequestStarted())
+    assert bank.pose == "tool"
     sink.on_event(
         ToolExecutionFinished(result=ToolResult("1", "list_dir", True, "ok", {}))
     )
+    assert bank.pose == "tool"
     sink.on_event(FinalAnswer(text="当前目录是空的。", reason="natural"))
+    assert bank.pose == "idle"
     snap = view.snapshot()
     blob = "\n".join(item.text for item in snap.items)
     assert "secret chain of thought" not in blob
@@ -461,7 +492,8 @@ def test_workspace_path_and_git_branch(tmp_path) -> None:
     doodle = mascot_placeholder(phase=0).plain
     assert mascot_placeholder(phase=7).plain == doodle
     assert "预留" not in doodle
-    assert not any(ch in doodle for ch in "▀▄")
+    assert any(ch in doodle for ch in "▀▄")
+    assert len(doodle.splitlines()) == 16
     for banned in ("鲸鱼娘", "鲸鱼酿", "像素鲸鱼娘"):
         assert banned not in doodle
     home = Path.home()
@@ -555,14 +587,14 @@ def test_dispatch_slash_mascot_lists_and_switches(tmp_path) -> None:
     listed = dispatch_slash("/mascot", session, settings)
     assert listed.kind == "status"
     assert "default" in listed.body
-    assert "idle" in listed.body
-    assert dispatch_slash("/mascot think", session, settings).body == "动作 = think"
-    assert get_bank().pose == "think"
+    assert "动作" not in listed.body
+    assert dispatch_slash("/mascot think", session, settings).kind == "warn"
+    assert get_bank().pose == "idle"
     assert dispatch_slash("/mascot nope", session, settings).kind == "warn"
     pack = tmp_path / ".wavemio" / "mascots" / "blob"
     pack.mkdir(parents=True)
     (pack / "palette.txt").write_text("k=#FF0000\n", encoding="utf-8")
-    (pack / "idle.txt").write_text(("k" * 24 + "\n") + ("." * 24 + "\n") * 23, encoding="utf-8")
+    (pack / "idle.txt").write_text(("k" * 32 + "\n") + ("." * 32 + "\n") * 31, encoding="utf-8")
     switched = dispatch_slash("/mascot blob", session, settings)
     assert switched.body == "立绘包 = blob"
     assert get_bank().pack_name == "blob"

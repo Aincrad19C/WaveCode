@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 from rich.text import Text
 
 from coding_agent.cli.pixel import PixelGrid, render_halfblock
-from coding_agent.cli.sprites.pack import POSES, discover_packs, load_pack, pack_origin
+from coding_agent.cli.sprites.pack import POSES, PoseClip, discover_packs, load_pack, pack_origin
 
-_USAGE = "用法：/mascot  或  /mascot 包名  或  /mascot idle|think|tool|ok|err"
+_USAGE = "用法：/mascot  或  /mascot 包名"
 
 
 class MascotBank:
@@ -18,7 +19,7 @@ class MascotBank:
         self.pack_name = "default"
         self.pose = "idle"
         self._loaded_key: tuple[str, str] | None = None
-        self._poses: dict[str, PixelGrid] = {}
+        self._poses: dict[str, PoseClip] = {}
 
     def set_workdir(self, path: Path | str | None) -> None:
         workdir = None if path is None else Path(path)
@@ -26,7 +27,7 @@ class MascotBank:
             self.workdir = workdir
             self._loaded_key = None
 
-    def _ensure(self) -> dict[str, PixelGrid]:
+    def _ensure(self) -> dict[str, PoseClip]:
         key = (self.pack_name, str(self.workdir or ""))
         if self._loaded_key == key and self._poses:
             return self._poses
@@ -41,7 +42,8 @@ class MascotBank:
 
     def grid(self) -> PixelGrid:
         poses = self._ensure()
-        return poses.get(self.pose) or poses["idle"]
+        clip = poses.get(self.pose) or poses["idle"]
+        return clip.at(time.monotonic())
 
     def render(self) -> Text:
         return render_halfblock(self.grid())
@@ -50,7 +52,7 @@ class MascotBank:
         packs = discover_packs(self.workdir)
         self._ensure()
         lines = [
-            f"当前  {self.pack_name} / {self.pose}",
+            f"当前  {self.pack_name}",
             "",
             "包：",
         ]
@@ -58,24 +60,24 @@ class MascotBank:
             mark = "*" if name == self.pack_name else " "
             lines.append(f"  {mark} {name:12} {pack_origin(path)}")
         lines.append("")
-        lines.append("动作： " + "  ".join(POSES))
         lines.append(_USAGE)
         return "\n".join(lines)
+
+    def set_pose(self, name: str) -> None:
+        if name in POSES:
+            self.pose = name
 
     def apply(self, token: str) -> tuple[str, str]:
         """Return (kind, body) for slash dispatch. kind is note|status|warn."""
         name = token.strip()
         if not name:
             return "status", self.list_text()
-        if name in POSES:
-            self.pose = name
-            return "note", f"动作 = {name}"
         packs = discover_packs(self.workdir)
         if name in packs:
             self.pack_name = name
             self._loaded_key = None
             return "note", f"立绘包 = {name}"
-        return "warn", f"未知 {name}。{_USAGE}"
+        return "warn", f"未知立绘包 {name}。{_USAGE}"
 
 
 _bank: MascotBank | None = None

@@ -1,4 +1,4 @@
-"""Minimal PNG codec for 24x24 mascot frames (stdlib zlib only)."""
+"""Minimal PNG codec for 32x32 mascot frames (stdlib zlib only)."""
 
 from __future__ import annotations
 
@@ -12,12 +12,12 @@ _SIG = b"\x89PNG\r\n\x1a\n"
 _TRANSPARENT: Pixel = (0, 0, 0, 0)
 
 
-def load_png(path: Path | str, size: int = 24) -> PixelGrid:
+def load_png(path: Path | str, size: int = 32) -> PixelGrid:
     """Read an 8-bit PNG and require an exact ``size`` x ``size`` canvas."""
     return decode_png(Path(path).read_bytes(), size=size)
 
 
-def decode_png(data: bytes, size: int = 24) -> PixelGrid:
+def decode_png(data: bytes, size: int = 32) -> PixelGrid:
     if not data.startswith(_SIG):
         raise ValueError("not a PNG")
     ihdr: bytes | None = None

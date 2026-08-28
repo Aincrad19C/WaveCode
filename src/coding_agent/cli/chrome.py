@@ -1,6 +1,6 @@
 """Ocean chrome: wave strip, workspace HUD, and rounded panels.
 
-The left rail shows a 24x24 half-block sprite from the current pack/pose. No label.
+The left rail shows a 32x32 half-block sprite from the current pack/pose. GIF poses loop.
 """
 
 from __future__ import annotations

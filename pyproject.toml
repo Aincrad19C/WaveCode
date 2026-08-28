@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "wavemio"
-version = "2.5.0"
+version = "2.6.1"
 description = "Wavemio: a from-scratch CLI coding agent for DeepSeek"
 readme = "README.md"
 requires-python = ">=3.11"

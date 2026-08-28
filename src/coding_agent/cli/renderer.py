@@ -10,6 +10,7 @@ from rich.text import Text
 
 from coding_agent.cli.branding import GLYPH_WAVE, PRODUCT_NAME
 from coding_agent.cli.chrome import activity_line, ocean_banner, ocean_panel
+from coding_agent.cli.sprites.bank import get_bank
 from coding_agent.cli.theme import UI_CYAN, UI_ERR, UI_ICE, UI_PRIMARY
 from coding_agent.cli.view import ChatView
 from coding_agent.domain.events import (
@@ -123,17 +124,21 @@ class TuiEventSink:
 
     def _on_UserMessageAccepted(self, event: UserMessageAccepted) -> None:
         self.view.append("user", event.text)
+        get_bank().set_pose("think")
 
     def _on_LLMRequestStarted(self, event: LLMRequestStarted) -> None:
         self.view.set_status(f"{GLYPH_WAVE} {PRODUCT_NAME} 思考中…")
 
     def _on_ToolCallScheduled(self, event: ToolCallScheduled) -> None:
+        get_bank().set_pose("tool")
         activity = describe_tool(event.call)
         self._current_activity = activity
         self.view.set_status(f"{GLYPH_WAVE} {PRODUCT_NAME} {activity}…")
 
     def _on_ToolExecutionFinished(self, event: ToolExecutionFinished) -> None:
         result = event.result
+        if not result.ok:
+            get_bank().set_pose("err")
         label = self._current_activity or result.name
         text = label
         if not result.ok:
@@ -145,6 +150,7 @@ class TuiEventSink:
         self.view.append("note", "上下文压缩")
 
     def _on_FinalAnswer(self, event: FinalAnswer) -> None:
+        get_bank().set_pose("idle")
         self.view.set_status("")
         if event.text:
             self.view.append("assistant", event.text)
@@ -154,10 +160,16 @@ class TuiEventSink:
         self.view.append("note", event.message)
 
     def _on_AgentFailed(self, event: AgentFailed) -> None:
+        get_bank().set_pose("err")
         self.view.set_status("")
         self.view.append("error", event.message)
 
     def _on_SessionEnded(self, event: AgentEvent) -> None:
+        reason = getattr(event, "reason", "")
+        if reason == "cancelled":
+            get_bank().set_pose("idle")
+        elif reason in {"auth", "parse_failures", "llm_failures", "empty"}:
+            get_bank().set_pose("err")
         self.view.set_status("")
         self.view.set_busy(False)
 

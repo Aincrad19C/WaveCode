@@ -43,6 +43,7 @@ from coding_agent.cli.chrome import (
 )
 from coding_agent.cli.commands import SlashOutcome, dispatch_slash
 from coding_agent.cli.editor import KeyAction, LineEditor
+from coding_agent.cli.sprites.bank import get_bank
 from coding_agent.cli.theme import (
     UI_CYAN,
     UI_DEEP,
@@ -57,9 +58,9 @@ from coding_agent.config.settings import Settings
 
 PROMPT = f"{GLYPH_WAVE} {CLI_NAME} › "
 _SPIN = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
-_MASCOT_WIDTH = 26
+_MASCOT_WIDTH = 34
 _SPLIT_MIN_WIDTH = 76
-_HUD_ROWS = 5
+_HUD_ROWS = 7
 _GUTTER = 1
 _INPUT_MAX_BODY = 6
 _INPUT_BAR_CELLS = 8
@@ -265,7 +266,7 @@ class _Hud:
             workspace_hud(
                 self.chrome,
                 busy=self.snap.busy,
-                width=options.max_width,
+                width=max(12, options.max_width - 4),
             ),
             title=cute_title(f"工作区  ·  v{ver}"),
             title_align="left",
@@ -681,6 +682,7 @@ class OceanTui:
             return self._slash(text)
         self.view.set_busy(True)
         self.view.set_status(f"{GLYPH_WAVE} {PRODUCT_NAME} 思考中…")
+        get_bank().set_pose("think")
         self._worker = threading.Thread(target=self._run_task, args=(text,), daemon=True)
         self._worker.start()
         return False
@@ -689,6 +691,7 @@ class OceanTui:
         try:
             self.session.ask(text)
         except Exception as exc:
+            get_bank().set_pose("err")
             self.view.append("error", str(exc))
         finally:
             self.view.set_busy(False)
@@ -700,6 +703,7 @@ class OceanTui:
             return True
         if command.split()[0] == "/reset":
             self.view.clear()
+            get_bank().set_pose("idle")
         self._show_outcome(outcome)
         return False
 

@@ -15,9 +15,8 @@ HELP_TEXT = f"""斜杠命令：
   /tools         列出工具 schema 名与说明
   /status        工作区、模型、轮次、token 估计
   /think on|off  切换 thinking 模式
-  /mascot        列出立绘包与动作
+  /mascot        列出立绘包
   /mascot 包名   切换立绘包
-  /mascot idle|think|tool|ok|err  切换动作帧
   /quit /exit /q 退出
 
 其余输入将作为编程任务发给 {PRODUCT_NAME}。行末 \\ 可续行。

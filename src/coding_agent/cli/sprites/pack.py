@@ -1,15 +1,33 @@
-"""Discover and load swappable 24x24 mascot packs."""
+"""Discover and load swappable 32x32 mascot packs."""
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 from coding_agent.cli.pixel import PixelGrid, parse_grid
+from coding_agent.cli.sprites.gifdec import load_gif
 from coding_agent.cli.sprites.png import load_png
 
 POSES = ("idle", "think", "tool", "ok", "err")
-SPRITE_SIZE = 24
+SPRITE_SIZE = 32
 BUILTIN_PACKS = Path(__file__).resolve().parent / "packs"
+_POSE_SUFFIXES = (".gif", ".png", ".txt")
+
+
+@dataclass(frozen=True, slots=True)
+class PoseClip:
+    """One pose: a still frame or a looping GIF."""
+
+    frames: tuple[PixelGrid, ...]
+    delay_ms: int = 100
+
+    def at(self, t: float = 0.0) -> PixelGrid:
+        n = len(self.frames)
+        if n == 1:
+            return self.frames[0]
+        delay = max(1, self.delay_ms)
+        return self.frames[int(t * 1000 / delay) % n]
 
 
 def user_home_packs() -> Path:
@@ -83,40 +101,45 @@ def load_pack(
     workdir: Path | None = None,
     *,
     include_user: bool = True,
-) -> tuple[dict[str, str], dict[str, PixelGrid]]:
+) -> tuple[dict[str, str], dict[str, PoseClip]]:
     packs = discover_packs(workdir, include_user=include_user)
     root = packs.get(name)
     if root is None:
         raise FileNotFoundError(f"mascot pack {name!r} not found")
     pal_path = root / "palette.txt"
     palette = parse_palette(pal_path.read_text(encoding="utf-8")) if pal_path.is_file() else {}
-    poses: dict[str, PixelGrid] = {}
+    poses: dict[str, PoseClip] = {}
     for pose in POSES:
         path = _pose_file(root, pose)
         if path is None:
             continue
-        poses[pose] = _load_frame(path, palette)
+        poses[pose] = _load_clip(path, palette)
     if "idle" not in poses:
-        raise FileNotFoundError(f"mascot pack {name!r} has no idle.txt or idle.png")
+        raise FileNotFoundError(f"mascot pack {name!r} has no idle.gif, idle.png or idle.txt")
     for pose in POSES:
         poses.setdefault(pose, poses["idle"])
     return palette, poses
 
 
 def _pose_file(root: Path, pose: str) -> Path | None:
-    for suffix in (".png", ".txt"):
+    for suffix in _POSE_SUFFIXES:
         path = root / f"{pose}{suffix}"
         if path.is_file():
             return path
     return None
 
 
-def _load_frame(path: Path, palette: dict[str, str]) -> PixelGrid:
-    if path.suffix.lower() == ".png":
-        return load_png(path, SPRITE_SIZE)
+def _load_clip(path: Path, palette: dict[str, str]) -> PoseClip:
+    suffix = path.suffix.lower()
+    if suffix == ".gif":
+        frames, delay = load_gif(path, SPRITE_SIZE)
+        return PoseClip(frames, delay)
+    if suffix == ".png":
+        return PoseClip((load_png(path, SPRITE_SIZE),))
     if not palette:
         raise ValueError(f"{path.name} requires palette.txt")
-    return parse_grid(parse_frame_text(path.read_text(encoding="utf-8")), palette)
+    still = parse_grid(parse_frame_text(path.read_text(encoding="utf-8")), palette)
+    return PoseClip((still,))
 
 
 def pack_origin(path: Path) -> str:

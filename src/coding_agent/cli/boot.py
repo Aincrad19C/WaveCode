@@ -17,7 +17,16 @@ from rich.style import Style
 from rich.text import Text
 
 from coding_agent.cli.branding import PRODUCT_NAME, TAGLINE
-from coding_agent.cli.theme import UI_CYAN, UI_DEEP, UI_FOAM, UI_ICE, UI_PRIMARY, UI_WHITE
+from coding_agent.cli.theme import (
+    UI_CYAN,
+    UI_DEEP,
+    UI_FOAM,
+    UI_ICE,
+    UI_PRIMARY,
+    UI_WHITE,
+    UI_WOOD,
+    UI_WOOD_DEEP,
+)
 
 BOOT_DURATION_S = 2.6
 REVEAL_DURATION_S = 1.5
@@ -256,11 +265,18 @@ def _blit_boat(
         y = origin_y + dy
         if not (0 <= y < height):
             continue
-        style = f"bold {UI_CYAN}" if dy >= _HULL_ROW else f"bold {UI_ICE}"
         for i, ch in enumerate(art):
             x = head_x + i
             if 0 <= x < width and ch != " ":
-                grid[y][x] = (ch, style)
+                grid[y][x] = (ch, _boat_style(dy, ch))
+
+
+def _boat_style(dy: int, ch: str) -> str:
+    if dy >= _HULL_ROW:
+        return f"bold {UI_WOOD_DEEP}"
+    if ch == "█" and dy >= 5:
+        return f"bold {UI_WOOD}"
+    return f"bold {UI_WHITE}"
 
 
 def _to_text(grid: list[list[tuple[str, str]]]) -> Text:

@@ -6,7 +6,7 @@
 OpenAI Agents SDK 等，也不依赖服务端 Code Interpreter / Files API）；对话历史与上下文管理、
 工具定义与本地执行、模型输出解析、循环终止条件、错误处理全部为本仓库自己的代码。
 
-CLI 为全屏独占聊天界面（备用屏幕，像 `top`）：启动动画结束后进入左轨 24×24 立绘、工作区 HUD、气泡对话与底部输入。管道与 `wavemio run` 仍是滚动文本。
+CLI 为全屏独占聊天界面（备用屏幕，像 `top`）：启动动画结束后进入左轨 32×32 立绘（可播 GIF）、工作区 HUD、气泡对话与底部输入。管道与 `wavemio run` 仍是滚动文本。
 
 设计文档见 [docs/](./docs/README.md)（00–12 + CHANGELOG）。
 

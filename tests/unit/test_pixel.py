@@ -22,35 +22,49 @@ def test_halfblock_stacks_two_rows() -> None:
     assert "#174b9e" in styles
 
 
-def test_idle_sprite_is_blank_24x24() -> None:
+def test_idle_sprite_is_32x32_gif() -> None:
     _, poses = load_pack("default", include_user=False)
-    grid = poses["idle"]
-    assert len(grid) == 24
-    assert len(grid[0]) == 24
-    assert all(pixel[3] == 0 for row in grid for pixel in row)
+    clip = poses["idle"]
+    assert len(clip.frames) == 8
+    assert clip.delay_ms == 100
+    grid = clip.at(0)
+    assert len(grid) == 32
+    assert len(grid[0]) == 32
+    assert any(pixel[3] for row in grid for pixel in row)
+    assert any(pixel[3] == 0 for row in grid for pixel in row)
     art = render_halfblock(grid)
     lines = art.plain.splitlines()
-    assert len(lines) == 12
-    assert all(len(line) <= 24 for line in lines)
-    assert not any(ch in art.plain for ch in "▀▄")
+    assert len(lines) == 16
+    assert all(len(line) <= 32 for line in lines)
+    assert any(ch in art.plain for ch in "▀▄")
     for banned in ("鲸鱼娘", "鲸鱼酿", "像素鲸鱼娘", "预留"):
         assert banned not in art.plain
 
 
-def test_default_pack_has_five_blank_png_poses() -> None:
-    from coding_agent.cli.sprites.pack import BUILTIN_PACKS, POSES, load_pack
+def test_default_pack_maps_gif_poses() -> None:
+    from coding_agent.cli.sprites.pack import BUILTIN_PACKS, POSES, SPRITE_SIZE, load_pack
 
     root = BUILTIN_PACKS / "default"
-    for pose in POSES:
-        assert (root / f"{pose}.png").is_file()
+    files = ("idle", "think", "tool", "err")
+    for pose in files:
+        assert (root / f"{pose}.gif").is_file()
+        assert not (root / f"{pose}.png").exists()
         assert not (root / f"{pose}.txt").exists()
+    assert not (root / "ok.gif").is_file()
     palette, poses = load_pack("default", include_user=False)
     assert palette == {}
     assert set(poses) == set(POSES)
-    for grid in poses.values():
-        assert len(grid) == 24
-        assert len(grid[0]) == 24
-        assert all(pixel[3] == 0 for row in grid for pixel in row)
+    for name in files:
+        clip = poses[name]
+        assert len(clip.frames) == 8
+        grid = clip.frames[0]
+        assert len(grid) == SPRITE_SIZE
+        assert len(grid[0]) == SPRITE_SIZE
+        assert any(pixel[3] for row in grid for pixel in row)
+    assert poses["ok"] is poses["idle"]
+    assert poses["think"].frames[0] != poses["idle"].frames[0]
+    assert poses["tool"].frames[0] != poses["idle"].frames[0]
+    assert poses["err"].frames[0] != poses["idle"].frames[0]
 
 
 def test_workspace_pack_overrides_and_falls_back_pose(tmp_path) -> None:
@@ -60,7 +74,7 @@ def test_workspace_pack_overrides_and_falls_back_pose(tmp_path) -> None:
     root = tmp_path / ".wavemio" / "mascots" / "blob"
     root.mkdir(parents=True)
     (root / "palette.txt").write_text("k=#FF0000\nb=#00FF00\n", encoding="utf-8")
-    (root / "idle.txt").write_text(("k" * 24 + "\n") + ("." * 24 + "\n") * 23, encoding="utf-8")
+    (root / "idle.txt").write_text(("k" * 32 + "\n") + ("." * 32 + "\n") * 31, encoding="utf-8")
     packs = discover_packs(tmp_path)
     assert packs["blob"] == root
     bank = MascotBank()
@@ -70,20 +84,27 @@ def test_workspace_pack_overrides_and_falls_back_pose(tmp_path) -> None:
     assert "blob" in body
     pixel = bank.grid()[0][0]
     assert pixel[:3] == (255, 0, 0)
-    bank.apply("think")
+    bank.set_pose("think")
     # missing think.txt falls back to idle
     assert bank.grid()[0][0][:3] == (255, 0, 0)
 
 
 def _blank_grid(pixel: tuple[int, int, int, int] = (0, 0, 0, 0)):
-    row = tuple(pixel for _ in range(24))
-    return tuple(row for _ in range(24))
+    row = tuple(pixel for _ in range(32))
+    return tuple(row for _ in range(32))
 
 
 def _stamp(rgb: tuple[int, int, int], x: int = 0, y: int = 0):
     rows = [list(row) for row in _blank_grid()]
     rows[y][x] = (rgb[0], rgb[1], rgb[2], 255)
     return tuple(tuple(px) for px in rows)
+
+
+def test_gif_decoder_rejects_garbage() -> None:
+    from coding_agent.cli.sprites.gifdec import decode_gif
+
+    with pytest.raises(ValueError, match="not a GIF"):
+        decode_gif(b"not-a-gif")
 
 
 def test_png_roundtrip_and_rejects_wrong_size() -> None:
@@ -94,7 +115,7 @@ def test_png_roundtrip_and_rejects_wrong_size() -> None:
     assert out == grid
     assert out[5][3][:3] == (26, 127, 191)
     tiny = (((255, 0, 0, 255), (0, 0, 0, 0)), ((0, 0, 0, 0), (0, 0, 0, 0)))
-    with pytest.raises(ValueError, match="24x24"):
+    with pytest.raises(ValueError, match="32x32"):
         decode_png(encode_png(tiny))
     with pytest.raises(ValueError, match="not a PNG"):
         decode_png(b"not-a-png")
@@ -113,13 +134,13 @@ def test_png_only_pack_without_palette(tmp_path) -> None:
     assert "pngpet" in discover_packs(tmp_path)
     palette, poses = load_pack("pngpet", tmp_path)
     assert palette == {}
-    assert poses["idle"][0][0][:3] == (255, 0, 0)
-    assert poses["ok"][0][1][:3] == (0, 255, 0)
-    assert poses["think"] == poses["idle"]
+    assert poses["idle"].frames[0][0][0][:3] == (255, 0, 0)
+    assert poses["ok"].frames[0][0][1][:3] == (0, 255, 0)
+    assert poses["think"] is poses["idle"]
     bank = MascotBank()
     bank.set_workdir(tmp_path)
     bank.apply("pngpet")
-    bank.apply("ok")
+    bank.set_pose("ok")
     assert bank.grid()[0][1][:3] == (0, 255, 0)
 
 
