@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "wavemio"
-version = "2.3.0"
+version = "2.5.0"
 description = "Wavemio: a from-scratch CLI coding agent for DeepSeek"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -32,7 +32,7 @@ coding-agent = "coding_agent.cli.app:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-coding_agent = ["py.typed"]
+coding_agent = ["py.typed", "cli/sprites/packs/**/*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src", "tests"]

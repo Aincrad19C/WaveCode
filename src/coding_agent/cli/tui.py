@@ -23,28 +23,44 @@ from rich.text import Text
 
 from coding_agent import __version__
 from coding_agent.agent.session import AgentSession
-from coding_agent.cli.branding import CLI_NAME, GLYPH_WAVE, PRODUCT_NAME, TAGLINE
+from coding_agent.cli.boot import (
+    BOOT_DURATION_S,
+    INTRO_DURATION_S,
+    REVEAL_DURATION_S,
+    boot_panel,
+    reveal_from_left,
+)
+from coding_agent.cli.branding import CLI_NAME, GLYPH_FLOW, GLYPH_WAVE, PRODUCT_NAME
 from coding_agent.cli.chrome import (
     WorkspaceChrome,
-    activity_line,
+    cute_title,
     detect_git_branch,
-    ellipsize_left,
+    foam_rule,
+    mascot_placeholder,
     ocean_panel,
-    short_home_path,
-    usage_bar,
     wave_strip,
+    workspace_hud,
 )
 from coding_agent.cli.commands import SlashOutcome, dispatch_slash
 from coding_agent.cli.editor import KeyAction, LineEditor
-from coding_agent.cli.theme import UI_CYAN, UI_ERR, UI_FOAM, UI_ICE, UI_PRIMARY
+from coding_agent.cli.theme import (
+    UI_CYAN,
+    UI_DEEP,
+    UI_ERR,
+    UI_FOAM,
+    UI_ICE,
+    UI_OK,
+    UI_PRIMARY,
+)
 from coding_agent.cli.view import ChatItem, ChatView, ViewSnapshot
 from coding_agent.config.settings import Settings
 
 PROMPT = f"{GLYPH_WAVE} {CLI_NAME} › "
 _SPIN = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
-_MASCOT_WIDTH = 22
-_SPLIT_MIN_WIDTH = 70
-_TOP_ROWS = 9
+_MASCOT_WIDTH = 26
+_SPLIT_MIN_WIDTH = 76
+_HUD_ROWS = 5
+_GUTTER = 1
 _INPUT_MAX_BODY = 6
 _INPUT_BAR_CELLS = 8
 _INPUT_CHROME = 4  # panel borders + horizontal padding
@@ -68,17 +84,48 @@ class OceanFrame:
         session: AgentSession | None = None,
         settings: Settings | None = None,
         git_branch: str = "",
+        boot_started: float | None = None,
     ) -> None:
         self.view = view
         self._chrome = chrome
         self.session = session
         self.settings = settings
         self.git_branch = git_branch
+        self.boot_started = boot_started
+
+    def skip_boot(self) -> None:
+        self.boot_started = None
 
     def __rich_console__(self, console: Console, options) -> Iterator[RenderableType]:
-        yield render_frame(
-            self.view, chrome=self._live_chrome(), width=options.max_width
+        width = options.max_width
+        height = options.height or console.size.height
+        h = max(8, height)
+        state = self._intro_state()
+        if state is None:
+            yield render_frame(
+                self.view, chrome=self._live_chrome(), width=width
+            )
+            return
+        kind, t = state
+        if kind == "boot":
+            yield boot_panel(width, h, t)
+            return
+        yield reveal_from_left(
+            render_frame(self.view, chrome=self._live_chrome(), width=width),
+            boot_panel(width, h, 1.0, tide=t * 3.0),
+            t,
         )
+
+    def _intro_state(self) -> tuple[str, float] | None:
+        if self.boot_started is None:
+            return None
+        elapsed = time.monotonic() - self.boot_started
+        if elapsed < BOOT_DURATION_S:
+            return ("boot", max(0.0, min(1.0, elapsed / BOOT_DURATION_S)))
+        later = elapsed - BOOT_DURATION_S
+        if later < REVEAL_DURATION_S:
+            return ("reveal", max(0.0, min(1.0, later / REVEAL_DURATION_S)))
+        return None
 
     def _live_chrome(self) -> WorkspaceChrome:
         if self.session is not None and self.settings is not None:
@@ -103,22 +150,89 @@ def render_frame(
     view: ChatView, chrome: WorkspaceChrome | None = None, *, width: int = 80
 ) -> Layout:
     chrome = chrome or WorkspaceChrome(version=__version__)
-    inner_w = max(8, width - _INPUT_CHROME)
-    lines, hint = _input_viewport(view.snapshot(), inner_w)
+    inner_w = max(24, width - 2)
+    snap = view.snapshot()
+    split = inner_w >= _SPLIT_MIN_WIDTH
+    rail = (_MASCOT_WIDTH + _GUTTER) if split else 0
+    main_w = max(24, inner_w - rail)
+    input_inner = max(8, main_w - _INPUT_CHROME)
+    lines, hint = _input_viewport(snap, input_inner)
     layout = Layout()
     layout.split_column(
         Layout(name="wave", size=1),
-        Layout(name="top", size=_TOP_ROWS),
+        Layout(name="body", ratio=1),
+    )
+    layout["wave"].update(_WaveRule())
+    if split:
+        layout["body"].split_row(
+            Layout(name="mascot", size=_MASCOT_WIDTH),
+            Layout(name="gutter", size=_GUTTER),
+            Layout(name="main", ratio=1),
+        )
+        layout["mascot"].update(_MascotRail(chrome.workdir))
+        layout["gutter"].update(_VRule())
+        main = layout["main"]
+    else:
+        main = layout["body"]
+    main.split_column(
+        Layout(name="hud", size=_HUD_ROWS),
+        Layout(name="gap_hud", size=1),
         Layout(name="chat", ratio=1),
         Layout(name="status", size=1),
         Layout(name="input", size=2 + max(1, len(lines))),
     )
-    layout["wave"].update(_WaveRule())
-    layout["top"].update(_TopChrome(chrome))
-    layout["chat"].update(_ChatPane(view))
-    layout["status"].update(_StatusBar(view))
-    layout["input"].update(_InputBar(lines, hint))
-    return layout
+    main["hud"].update(_Hud(chrome, snap))
+    main["gap_hud"].update(_HRule())
+    main["chat"].update(_ChatPane(view))
+    main["status"].update(_StatusBar(view))
+    main["input"].update(_InputBar(lines, hint))
+    frame = Layout()
+    frame.split_column(
+        Layout(name="north", size=1),
+        Layout(name="mid", ratio=1),
+        Layout(name="south", size=1),
+    )
+    frame["mid"].split_row(
+        Layout(name="west", size=1),
+        Layout(name="core", ratio=1),
+        Layout(name="east", size=1),
+    )
+    frame["north"].update(_FrameCap("top"))
+    frame["south"].update(_FrameCap("bottom"))
+    frame["west"].update(_FrameSide())
+    frame["east"].update(_FrameSide())
+    frame["core"].update(layout)
+    return frame
+
+
+class _FrameCap:
+    def __init__(self, kind: str) -> None:
+        self.kind = kind
+
+    def __rich_console__(self, console: Console, options) -> Iterator[RenderableType]:
+        width = max(2, options.max_width)
+        if self.kind == "top":
+            line = "┏" + "━" * (width - 2) + "┓"
+        else:
+            line = "┗" + "━" * (width - 2) + "┛"
+        yield Text(line, style=UI_PRIMARY)
+
+
+class _FrameSide:
+    def __rich_console__(self, console: Console, options) -> Iterator[RenderableType]:
+        height = max(1, options.height or 1)
+        yield Text("\n".join(["┃"] * height), style=UI_PRIMARY)
+
+
+class _HRule:
+    def __rich_console__(self, console: Console, options) -> Iterator[RenderableType]:
+        yield foam_rule(options.max_width)
+
+
+class _VRule:
+    def __rich_console__(self, console: Console, options) -> Iterator[RenderableType]:
+        height = max(1, options.height or 1)
+        yield Text("\n".join(["│"] * height), style=f"dim {UI_CYAN}")
 
 
 class _WaveRule:
@@ -126,78 +240,40 @@ class _WaveRule:
         yield wave_strip(options.max_width, phase=int(time.monotonic() * 5))
 
 
-class _TopChrome:
-    def __init__(self, chrome: WorkspaceChrome) -> None:
-        self.chrome = chrome
+class _MascotRail:
+    def __init__(self, workdir: str = ".") -> None:
+        self.workdir = workdir
 
     def __rich_console__(self, console: Console, options) -> Iterator[RenderableType]:
-        if options.max_width >= _SPLIT_MIN_WIDTH:
-            table = Table(
-                box=box.ROUNDED,
-                expand=True,
-                show_header=True,
-                header_style=f"bold {UI_CYAN}",
-                border_style=UI_CYAN,
-                padding=(0, 1),
-            )
-            mascot = f"{GLYPH_WAVE} 吉祥物"
-            work = f"{GLYPH_WAVE} 工作区  ·  v{self.chrome.version or __version__}"
-            table.add_column(mascot, width=_MASCOT_WIDTH - 2, justify="center")
-            table.add_column(work, ratio=1)
-            grid = _workspace_grid(self.chrome, options.max_width)
-            table.add_row(Text("预留", style="muted"), grid)
-            yield table
-            return
         yield Panel(
-            _workspace_grid(self.chrome, options.max_width, mascot_hint=True),
-            title=f"{GLYPH_WAVE} 工作区  ·  v{self.chrome.version or __version__}",
-            title_align="left",
+            Align.center(mascot_placeholder(workdir=self.workdir), vertical="middle"),
             box=box.ROUNDED,
-            border_style=UI_CYAN,
-            padding=(0, 1),
+            border_style=UI_ICE,
+            padding=(0, 0),
             expand=True,
         )
 
 
-def _workspace_grid(
-    chrome: WorkspaceChrome, max_width: int, *, mascot_hint: bool = False
-) -> Table:
-    path = ellipsize_left(short_home_path(chrome.workdir), max(12, max_width - 16))
-    think = "on" if chrome.thinking else "off"
-    stream = "on" if chrome.stream else "off"
-    bar = usage_bar(chrome.tokens, chrome.max_tokens, 10)
+class _Hud:
+    def __init__(self, chrome: WorkspaceChrome, snap: ViewSnapshot) -> None:
+        self.chrome = chrome
+        self.snap = snap
 
-    grid = Table.grid(padding=(0, 1), expand=True)
-    grid.add_column(style=UI_ICE, no_wrap=True, width=6)
-    grid.add_column(overflow="ellipsis", ratio=1)
-
-    title = Text()
-    title.append(f"{GLYPH_WAVE} ", style=f"bold {UI_CYAN}")
-    title.append(PRODUCT_NAME, style=f"bold {UI_FOAM}")
-    title.append("  ", style="")
-    title.append(TAGLINE, style=UI_ICE)
-    title.append("  ·  已就绪", style=UI_CYAN)
-    grid.add_row("", title)
-    grid.add_row("目录", Text(path, style=f"bold {UI_FOAM}"))
-    grid.add_row(
-        "模型",
-        Text.from_markup(
-            f"[bold {UI_FOAM}]{chrome.model or '—'}[/]    "
-            f"thinking [{UI_CYAN if chrome.thinking else UI_ICE}]{think}[/]    "
-            f"流式 [{UI_ICE}]{stream}[/]"
-        ),
-    )
-    session = Text()
-    session.append(f"轮次 {chrome.turn}/{chrome.max_turns}    ", style=UI_FOAM)
-    session.append(f"{bar} ", style=UI_CYAN)
-    session.append(f"{chrome.tokens} / {chrome.max_tokens}", style=UI_ICE)
-    grid.add_row("会话", session)
-    if mascot_hint and not chrome.git_branch:
-        grid.add_row("吉祥物", Text("预留", style="muted"))
-    else:
-        git_style = UI_CYAN if chrome.git_branch else "muted"
-        grid.add_row("git", Text(chrome.git_branch or "—", style=git_style))
-    return grid
+    def __rich_console__(self, console: Console, options) -> Iterator[RenderableType]:
+        ver = self.chrome.version or __version__
+        yield Panel(
+            workspace_hud(
+                self.chrome,
+                busy=self.snap.busy,
+                width=options.max_width,
+            ),
+            title=cute_title(f"工作区  ·  v{ver}"),
+            title_align="left",
+            box=box.SQUARE,
+            border_style=UI_CYAN,
+            padding=(0, 1),
+            expand=True,
+        )
 
 
 class _ChatPane:
@@ -213,9 +289,9 @@ class _ChatPane:
         body = _fit_chat(snap, inner_w, inner_h)
         yield Panel(
             body,
-            title=f"{GLYPH_WAVE} 对话",
+            title=cute_title("对话"),
             title_align="left",
-            box=box.ROUNDED,
+            box=box.HEAVY,
             border_style=UI_PRIMARY,
             padding=(0, 1),
             expand=True,
@@ -257,10 +333,12 @@ class _InputBar:
             body.append(line)
         yield Panel(
             body,
-            box=box.ROUNDED,
-            border_style=UI_CYAN,
+            box=box.DOUBLE,
+            border_style=UI_FOAM,
             padding=(0, 1),
             expand=True,
+            title=cute_title("输入"),
+            title_align="left",
             subtitle=self.hint or None,
             subtitle_align="right",
         )
@@ -348,8 +426,8 @@ def _fit_chat(snap: ViewSnapshot, width: int, height: int) -> RenderableType:
         if cut:
             items = items[:-cut]
     if not items:
-        welcome = Text()
-        welcome.append(f"{GLYPH_WAVE} {PRODUCT_NAME}\n", style=f"bold {UI_FOAM}")
+        welcome = Text(justify="center")
+        welcome.append(f"{PRODUCT_NAME}\n", style=f"bold {UI_FOAM}")
         welcome.append("在下方输入任务。\n", style=UI_ICE)
         welcome.append(snap.placeholder, style="muted")
         return Align.center(welcome, vertical="middle")
@@ -375,13 +453,16 @@ def _fit_chat(snap: ViewSnapshot, width: int, height: int) -> RenderableType:
 
 
 def _item_height(item: ChatItem, inner: int) -> int:
-    lines = _wrapped_lines(item.text, inner)
-    if item.kind in ("tool", "note"):
-        return 1 + item.text.count("\n")
+    text_w = max(8, inner - 4)
+    lines = _wrapped_lines(item.text, text_w)
+    if item.kind == "note":
+        return 1
+    if item.kind == "tool":
+        return 4 if "\n" in item.text else 3
     if item.kind == "user":
-        return lines
+        return 2 + lines
     if item.kind == "assistant":
-        return 1 + lines
+        return 2 + lines
     return 2 + lines
 
 
@@ -397,27 +478,44 @@ def _wrapped_lines(text: str, width: int) -> int:
 def _render_item(item: ChatItem, width: int) -> RenderableType:
     if item.kind == "tool":
         first, _, rest = item.text.partition("\n")
-        line = activity_line(ok=item.ok, label=first)
-        if rest:
-            return Group(line, Text(f"     {rest.splitlines()[0][:80]}", style="muted"))
-        return line
+        preview = rest.splitlines()[0][:80] if rest else ("ok" if item.ok else "失败")
+        mark = "ok" if item.ok else "失败"
+        return Panel(
+            Text(preview, style="muted" if item.ok else "error"),
+            title=f"{GLYPH_FLOW} {first}  ·  {mark}",
+            title_align="left",
+            box=box.SIMPLE,
+            border_style=UI_OK if item.ok else UI_ERR,
+            padding=(0, 1),
+            expand=True,
+        )
     if item.kind == "note":
         return Text(f"  {GLYPH_WAVE} {item.text}", style="muted")
     if item.kind == "error":
         return ocean_panel(item.text, title=item.title or "失败", border=UI_ERR, width=width)
     if item.kind == "user":
-        body = Text()
-        body.append("❯ ", style=f"bold {UI_CYAN}")
-        body.append(item.text, style="user")
-        return body
+        return Panel(
+            Text(item.text, style="user"),
+            title=f"{GLYPH_WAVE} 你",
+            title_align="left",
+            box=box.SIMPLE,
+            border_style=UI_DEEP,
+            padding=(0, 1),
+            expand=True,
+        )
     if item.kind in ("help", "tools", "status"):
         return ocean_panel(
             item.text, title=item.title or item.kind, border=UI_ICE, width=width
         )
-    head = Text()
-    head.append(f"{GLYPH_WAVE} {PRODUCT_NAME}\n", style=f"bold {UI_FOAM}")
-    head.append(item.text, style="assistant")
-    return head
+    return Panel(
+        Text(item.text, style="assistant"),
+        title=f"{GLYPH_WAVE} {PRODUCT_NAME}",
+        title_align="left",
+        box=box.SIMPLE,
+        border_style=UI_ICE,
+        padding=(0, 1),
+        expand=True,
+    )
 
 
 @contextmanager
@@ -468,6 +566,7 @@ class OceanTui:
             session=self.session,
             settings=self.settings,
             git_branch=branch,
+            boot_started=time.monotonic(),
         )
         try:
             with Live(
@@ -475,13 +574,14 @@ class OceanTui:
                 console=self.console,
                 screen=True,
                 auto_refresh=True,
-                refresh_per_second=12,
+                refresh_per_second=16,
                 transient=False,
                 redirect_stdout=False,
                 redirect_stderr=False,
                 vertical_overflow="crop",
             ):
                 with stdin_cbreak(fd):
+                    self._await_boot(fd, frame)
                     self._loop(fd, editor)
         finally:
             if self.view.snapshot().busy:
@@ -490,6 +590,27 @@ class OceanTui:
                 self._worker.join(timeout=2.0)
         self._farewell()
         return 0
+
+    def _await_boot(self, fd: int, frame: OceanFrame) -> None:
+        if frame.boot_started is None:
+            return
+        until = frame.boot_started + INTRO_DURATION_S
+        while time.monotonic() < until:
+            try:
+                ready, _, _ = select.select([sys.stdin], [], [], 0.04)
+            except (InterruptedError, KeyboardInterrupt):
+                frame.skip_boot()
+                return
+            if not ready:
+                continue
+            try:
+                data = os.read(fd, 64)
+            except OSError:
+                frame.skip_boot()
+                return
+            if data:
+                frame.skip_boot()
+                return
 
     def _loop(self, fd: int, editor: LineEditor) -> None:
         while True:
@@ -592,4 +713,6 @@ class OceanTui:
     def _farewell(self) -> None:
         self.console.print()
         self.console.print(wave_strip(min(max(self.console.width - 2, 24), 76)))
-        self.console.print(Text(f"  {GLYPH_WAVE} 已退出。再见，{PRODUCT_NAME}。", style=UI_CYAN))
+        self.console.print(
+            Text(f"  {GLYPH_WAVE} 已退出。再见，{PRODUCT_NAME}。", style=UI_CYAN)
+        )

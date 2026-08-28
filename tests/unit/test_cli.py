@@ -100,6 +100,12 @@ def test_wave_strip_is_ocean_band() -> None:
     strip = wave_strip(24)
     assert len(strip.plain) == 24
     assert set("▁▂▃▄▅▆▇") & set(strip.plain)
+    assert "✦" not in strip.plain
+    assert "✧" not in strip.plain
+    styles = " ".join(str(span.style) for span in strip.spans).lower()
+    assert "#d7f4ff" not in styles
+    assert "#3ec8e8" in styles
+    assert "#8ec8e6" in styles
 
 
 def test_ocean_banner_prints_wavemio() -> None:
@@ -119,6 +125,155 @@ def test_ocean_banner_prints_wavemio() -> None:
     assert "DeepSeek" in out
     assert "已就绪" in out
     assert "鲸鱼娘" not in out
+    assert "✦" not in out
+
+
+def test_boot_panel_boat_draws_channel() -> None:
+    from io import StringIO
+
+    from rich.console import Console
+
+    from coding_agent.cli.boot import boot_panel
+
+    buf = StringIO()
+    console = Console(
+        file=buf,
+        width=80,
+        height=24,
+        force_terminal=True,
+        color_system=None,
+        record=True,
+    )
+    console.print(boot_panel(80, 24, 0.55))
+    out = console.export_text()
+    assert PRODUCT_NAME in out
+    assert "DeepSeek" in out
+    assert "✦" not in out
+    assert "┏" in out
+    assert "█" in out
+    assert set("▁▂▃▄▅▆▇") & set(out)
+    mark = boot_panel(80, 24, 0.85)
+    inked = [
+        span
+        for span in mark.renderable.spans
+        if span.style and "#ffffff" in str(span.style).lower()
+    ]
+    assert inked
+    assert all("on #000000" in str(span.style).lower() for span in inked)
+    early_buf = StringIO()
+    early = Console(
+        file=early_buf,
+        width=80,
+        height=24,
+        force_terminal=True,
+        color_system=None,
+        record=True,
+    )
+    early.print(boot_panel(80, 24, 0.05))
+    assert PRODUCT_NAME not in early.export_text()
+
+
+def test_ocean_frame_skip_boot_shows_workspace() -> None:
+    from io import StringIO
+
+    from rich.console import Console
+
+    from coding_agent.cli.tui import OceanFrame
+    from coding_agent.cli.view import ChatView
+
+    view = ChatView()
+    frame = OceanFrame(view, boot_started=0.0)
+    buf = StringIO()
+    console = Console(
+        file=buf,
+        width=80,
+        height=24,
+        force_terminal=True,
+        color_system=None,
+        record=True,
+    )
+    console.print(frame)
+    assert PRODUCT_NAME in console.export_text()
+    frame.skip_boot()
+    buf2 = StringIO()
+    console2 = Console(
+        file=buf2,
+        width=80,
+        height=24,
+        force_terminal=True,
+        color_system=None,
+        record=True,
+    )
+    console2.print(frame)
+    out = console2.export_text()
+    assert "工作区" in out
+    assert "✦" not in out
+
+
+def test_reveal_from_left_uncovers_workspace() -> None:
+    from io import StringIO
+
+    from rich.console import Console
+
+    from coding_agent.cli.boot import boot_panel, reveal_from_left
+    from coding_agent.cli.tui import render_frame
+    from coding_agent.cli.view import ChatView
+
+    view = ChatView()
+    main = render_frame(view, width=80)
+    cover = boot_panel(80, 24, 1.0)
+
+    def paint(t: float) -> str:
+        buf = StringIO()
+        console = Console(
+            file=buf,
+            width=80,
+            height=24,
+            force_terminal=True,
+            color_system=None,
+            record=True,
+        )
+        console.print(reveal_from_left(main, cover, t))
+        return console.export_text()
+
+    start = paint(0.0)
+    assert "工作区" not in start
+    assert PRODUCT_NAME in start
+    assert set("▁▂▃▄▅▆▇") & set(start)
+    done = paint(1.0)
+    assert "工作区" in done
+    assert "对话" in done
+    mid = paint(0.45)
+    assert "▓" in mid or "▒" in mid
+
+
+def test_ocean_frame_holds_splash_until_reveal_finishes() -> None:
+    import time
+    from io import StringIO
+
+    from rich.console import Console
+
+    from coding_agent.cli.boot import BOOT_DURATION_S
+    from coding_agent.cli.tui import OceanFrame
+    from coding_agent.cli.view import ChatView
+
+    view = ChatView()
+    frame = OceanFrame(view, boot_started=time.monotonic() - BOOT_DURATION_S - 0.05)
+    buf = StringIO()
+    console = Console(
+        file=buf,
+        width=80,
+        height=24,
+        force_terminal=True,
+        color_system=None,
+        record=True,
+    )
+    console.print(frame)
+    out = console.export_text()
+    assert PRODUCT_NAME in out
+    assert "█" in out or set("▁▂▃▄▅▆▇") & set(out)
+
+
 
 
 def test_tui_sink_hides_reasoning_and_keeps_activity() -> None:
@@ -164,9 +319,11 @@ def test_tui_frame_fills_terminal_like_top() -> None:
 
     from coding_agent.cli.branding import GLYPH_WAVE
     from coding_agent.cli.chrome import WorkspaceChrome
+    from coding_agent.cli.sprites.bank import reset_bank
     from coding_agent.cli.tui import render_frame
     from coding_agent.cli.view import ChatView
 
+    reset_bank()
     view = ChatView()
     view.append("user", "列出文件")
     view.append("tool", "List .", ok=True)
@@ -186,7 +343,7 @@ def test_tui_frame_fills_terminal_like_top() -> None:
     console = Console(
         file=buf,
         width=80,
-        height=24,
+        height=32,
         force_terminal=True,
         color_system=None,
         record=True,
@@ -194,18 +351,35 @@ def test_tui_frame_fills_terminal_like_top() -> None:
     console.print(render_frame(view, chrome=chrome))
     out = console.export_text()
     assert PRODUCT_NAME in out
-    assert "吉祥物" in out
-    assert "预留" in out
+    assert "吉祥物" not in out
+    assert "预留" not in out
     assert "工作区" in out
     assert "对话" in out
-    assert "目录" in out
+    assert "输入" in out
+    assert "你" in out
+    assert "wavemio-proj" in out
     assert "deepseek-v4-flash" in out
     assert "列出文件" in out
     assert "当前目录是空的。" in out
     assert "List ." in out
     assert f"{GLYPH_WAVE} wavemio ›" in out
     assert "已就绪" in out
-    assert "鲸鱼娘" not in out
+    assert "DeepSeek" in out
+    assert "目录" in out
+    assert "模型" in out
+    assert "thinking" in out
+    assert "流式" in out
+    assert "轮次" in out
+    assert "✦" not in out
+    assert "✧" not in out
+    assert "╭" in out
+    assert "┌" in out
+    assert "┏" in out
+    assert "╔" in out
+    assert "╚" in out
+    assert "╝" in out
+    for banned in ("鲸鱼娘", "鲸鱼酿", "像素鲸鱼娘"):
+        assert banned not in out
 
 
 def test_line_editor_submit_utf8_history_and_continue() -> None:
@@ -250,6 +424,7 @@ def test_dispatch_slash_help_and_quit() -> None:
     help_out = dispatch_slash("/help", dummy, settings)  # type: ignore[arg-type]
     assert help_out.kind == "help"
     assert "/reset" in help_out.body
+    assert "/mascot" in help_out.body
     unknown = dispatch_slash("/nope", dummy, settings)  # type: ignore[arg-type]
     assert unknown.kind == "warn"
 
@@ -266,7 +441,15 @@ def test_wave_strip_phase_rolls() -> None:
 def test_workspace_path_and_git_branch(tmp_path) -> None:
     from pathlib import Path
 
-    from coding_agent.cli.chrome import detect_git_branch, short_home_path, usage_bar
+    from coding_agent.cli.chrome import (
+        detect_git_branch,
+        mascot_placeholder,
+        short_home_path,
+        usage_bar,
+    )
+    from coding_agent.cli.sprites.bank import reset_bank
+
+    reset_bank()
 
     git = tmp_path / ".git"
     git.mkdir()
@@ -275,6 +458,12 @@ def test_workspace_path_and_git_branch(tmp_path) -> None:
     assert detect_git_branch(tmp_path / "nope") == ""
     assert usage_bar(0, 100, 10) == "░" * 10
     assert "█" in usage_bar(50, 100, 10)
+    doodle = mascot_placeholder(phase=0).plain
+    assert mascot_placeholder(phase=7).plain == doodle
+    assert "预留" not in doodle
+    assert not any(ch in doodle for ch in "▀▄")
+    for banned in ("鲸鱼娘", "鲸鱼酿", "像素鲸鱼娘"):
+        assert banned not in doodle
     home = Path.home()
     assert short_home_path(home) == "~"
     assert short_home_path(home / "proj").startswith("~/")
@@ -349,6 +538,35 @@ def test_dispatch_slash_tools_status_think_reset() -> None:
     note = dispatch_slash("/think on", session, settings)
     assert note.body == "thinking = on"
     assert settings.thinking is True
+
+
+def test_dispatch_slash_mascot_lists_and_switches(tmp_path) -> None:
+    from types import SimpleNamespace
+
+    from coding_agent.agent.state import LoopState
+    from coding_agent.cli.commands import dispatch_slash
+    from coding_agent.cli.sprites.bank import get_bank, reset_bank
+    from fakes.settings import make_settings
+
+    reset_bank()
+    settings = make_settings()
+    settings.workdir = tmp_path
+    session = SimpleNamespace(loop=SimpleNamespace(state=LoopState(), settings=settings))
+    listed = dispatch_slash("/mascot", session, settings)
+    assert listed.kind == "status"
+    assert "default" in listed.body
+    assert "idle" in listed.body
+    assert dispatch_slash("/mascot think", session, settings).body == "动作 = think"
+    assert get_bank().pose == "think"
+    assert dispatch_slash("/mascot nope", session, settings).kind == "warn"
+    pack = tmp_path / ".wavemio" / "mascots" / "blob"
+    pack.mkdir(parents=True)
+    (pack / "palette.txt").write_text("k=#FF0000\n", encoding="utf-8")
+    (pack / "idle.txt").write_text(("k" * 24 + "\n") + ("." * 24 + "\n") * 23, encoding="utf-8")
+    switched = dispatch_slash("/mascot blob", session, settings)
+    assert switched.body == "立绘包 = blob"
+    assert get_bank().pack_name == "blob"
+    reset_bank()
 
 
 def test_tui_slash_help_and_submit_ask() -> None:

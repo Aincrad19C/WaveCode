@@ -1,6 +1,6 @@
-"""Ocean chrome: wave strip, banner, workspace metadata, and rounded panels.
+"""Ocean chrome: wave strip, workspace HUD, and rounded panels.
 
-No pixel sprites — the look is typography, a sine-like ▁▂▃ band, and cyan foam.
+The left rail shows a 24x24 half-block sprite from the current pack/pose. No label.
 """
 
 from __future__ import annotations
@@ -12,14 +12,28 @@ from rich import box
 from rich.cells import cell_len
 from rich.console import Console, RenderableType
 from rich.panel import Panel
+from rich.table import Table
 from rich.text import Text
 
 from coding_agent import __version__
-from coding_agent.cli.branding import GLYPH_FLOW, GLYPH_WAVE, PRODUCT_NAME, TAGLINE
-from coding_agent.cli.theme import UI_CYAN, UI_DEEP, UI_FOAM, UI_ICE, UI_PRIMARY
+from coding_agent.cli.branding import (
+    GLYPH_FLOW,
+    GLYPH_WAVE,
+    PRODUCT_NAME,
+    TAGLINE,
+)
+from coding_agent.cli.sprites.bank import get_bank
+from coding_agent.cli.theme import (
+    UI_CYAN,
+    UI_DEEP,
+    UI_FOAM,
+    UI_ICE,
+    UI_PRIMARY,
+    UI_WARN,
+)
 
 _WAVE_UNITS = "▁▂▃▄▅▆▇▆▅▄▃▂"
-_WAVE_COLORS = (UI_DEEP, UI_PRIMARY, UI_CYAN, UI_FOAM, UI_CYAN, UI_PRIMARY)
+_WAVE_COLORS = (UI_DEEP, UI_PRIMARY, UI_CYAN, UI_ICE, UI_CYAN, UI_PRIMARY)
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,17 +116,81 @@ def usage_bar(used: int, total: int, width: int = 12) -> str:
     return "█" * filled + "░" * (width - filled)
 
 
+def cute_title(label: str) -> str:
+    return f"{GLYPH_WAVE} {label}"
+
+
+def foam_rule(width: int) -> Text:
+    return Text("─" * max(1, width), style=f"dim {UI_CYAN}")
+
+
+def mascot_placeholder(*, phase: int = 0, workdir: Path | str | None = None) -> Text:
+    """Current pack/pose for the left rail. ``phase`` is ignored (no idle motion)."""
+    _ = phase
+    bank = get_bank()
+    if workdir is not None:
+        bank.set_workdir(workdir)
+    return bank.render()
+
+
+def workspace_hud(
+    chrome: WorkspaceChrome,
+    *,
+    busy: bool = False,
+    width: int = 80,
+) -> Table:
+    """HUD with original field names: 目录 / 模型 / thinking / 流式 / git / 轮次."""
+    path = ellipsize_left(short_home_path(chrome.workdir), max(8, min(28, width - 16)))
+    state = "思考中" if busy else "已就绪"
+    state_style = UI_WARN if busy else UI_CYAN
+    think = "on" if chrome.thinking else "off"
+    stream = "on" if chrome.stream else "off"
+    git = chrome.git_branch or "—"
+
+    top = Text()
+    top.append(PRODUCT_NAME, style=f"bold {UI_FOAM}")
+    top.append("  ", style="")
+    top.append(TAGLINE, style=UI_ICE)
+    top.append("  ·  ", style="muted")
+    top.append(state, style=f"bold {state_style}")
+
+    mid = Text()
+    mid.append("目录 ", style=UI_ICE)
+    mid.append(path, style=f"bold {UI_FOAM}")
+    mid.append("  模型 ", style=UI_ICE)
+    mid.append(ellipsize_left(chrome.model or "—", 20), style=UI_FOAM)
+    mid.append("  git ", style=UI_ICE)
+    mid.append(git, style=UI_CYAN if chrome.git_branch else "muted")
+
+    bottom = Text()
+    bottom.append("thinking ", style=UI_ICE)
+    bottom.append(think, style=UI_CYAN if chrome.thinking else "muted")
+    bottom.append("  流式 ", style=UI_ICE)
+    bottom.append(stream, style=UI_ICE)
+    bottom.append("  轮次 ", style=UI_ICE)
+    bottom.append(f"{chrome.turn}/{chrome.max_turns}  ", style=UI_FOAM)
+    bottom.append(f"{usage_bar(chrome.tokens, chrome.max_tokens, 8)} ", style=UI_CYAN)
+    bottom.append(f"{chrome.tokens}/{chrome.max_tokens}", style=UI_ICE)
+
+    grid = Table.grid(expand=True)
+    grid.add_row(top)
+    grid.add_row(mid)
+    grid.add_row(bottom)
+    return grid
+
+
 def content_width(console: Console, cap: int = 76) -> int:
     return max(36, min(console.width - 2, cap))
 
 
 def wave_strip(width: int, *, phase: int = 0) -> Text:
-    """A short rolling swell; width is the number of cells."""
-    width = max(8, width)
+    """A short rolling swell; width is the number of cells. Waves only."""
+    width = max(1, width)
     strip = Text()
     n = len(_WAVE_UNITS)
     for i in range(width):
-        strip.append(_WAVE_UNITS[(i + phase) % n], style=_WAVE_COLORS[i % len(_WAVE_COLORS)])
+        tick = i + phase
+        strip.append(_WAVE_UNITS[tick % n], style=_WAVE_COLORS[i % len(_WAVE_COLORS)])
     return strip
 
 

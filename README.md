@@ -6,7 +6,7 @@
 OpenAI Agents SDK 等，也不依赖服务端 Code Interpreter / Files API）；对话历史与上下文管理、
 工具定义与本地执行、模型输出解析、循环终止条件、错误处理全部为本仓库自己的代码。
 
-CLI 为全屏独占聊天界面（备用屏幕，像 `top`）：左侧吉祥物区留空、工作区信息（目录/模型/轮次）、对话区与底部输入。不绘制像素立绘。管道与 `wavemio run` 仍是滚动文本。
+CLI 为全屏独占聊天界面（备用屏幕，像 `top`）：启动动画结束后进入左轨 24×24 立绘、工作区 HUD、气泡对话与底部输入。管道与 `wavemio run` 仍是滚动文本。
 
 设计文档见 [docs/](./docs/README.md)（00–12 + CHANGELOG）。
 
@@ -40,7 +40,7 @@ wavemio run -                    # 从 stdin 读任务
 wavemio --workdir /path --max-turns 10 --think run "..."
 ```
 
-REPL 斜杠命令：`/help` `/reset` `/tools` `/status` `/think on|off` `/quit`。
+REPL 斜杠命令：`/help` `/reset` `/tools` `/status` `/think on|off` `/mascot` `/quit`。Enter 发送，行末 `\` 续行。
 会话日志写入 `<workdir>/.wavemio/logs/<timestamp>.jsonl`（已 gitignore）。
 
 ## 开发与测试

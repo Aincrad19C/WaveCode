@@ -5,10 +5,10 @@ from __future__ import annotations
 from rich.theme import Theme
 
 # Abyss → horizon → foam. Keep enough contrast on both dark and light terminals.
-UI_ABYSS = "#061018"
 UI_DEEP = "#0B4F7A"
 UI_PRIMARY = "#1A7FBF"
 UI_CYAN = "#3EC8E8"
+UI_WHITE = "#FFFFFF"
 UI_FOAM = "#D7F4FF"
 UI_ICE = "#8EC8E6"
 UI_TEXT = "#E7F3FA"
