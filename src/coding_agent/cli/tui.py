@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import select
+import subprocess
 import sys
 import threading
 import time
@@ -42,8 +43,12 @@ from coding_agent.cli.chrome import (
     workspace_hud,
 )
 from coding_agent.cli.commands import SlashOutcome, dispatch_slash
-from coding_agent.cli.editor import KeyAction, LineEditor
+from coding_agent.cli.editor import KeyAction, LineEditor, NavKeys
+from coding_agent.cli.handoff import file_open_argv
+from coding_agent.cli.hub import TAB_LABELS, TABS, get_hub
+from coding_agent.cli.sidebar import get_sidebar
 from coding_agent.cli.sprites.bank import get_bank
+from coding_agent.cli.sprites.pack import SPRITE_SIZE
 from coding_agent.cli.theme import (
     UI_CYAN,
     UI_DEEP,
@@ -59,6 +64,8 @@ from coding_agent.config.settings import Settings
 PROMPT = f"{GLYPH_WAVE} {CLI_NAME} › "
 _SPIN = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 _MASCOT_WIDTH = 34
+_SPRITE_ROWS = SPRITE_SIZE // 2  # half-block rows
+_SPRITE_PANEL_ROWS = _SPRITE_ROWS + 2  # rounded borders; portrait only
 _SPLIT_MIN_WIDTH = 76
 _HUD_ROWS = 7
 _GUTTER = 1
@@ -132,6 +139,10 @@ class OceanFrame:
         if self.session is not None and self.settings is not None:
             state = self.session.loop.state
             cwd = _session_cwd(self.session, self.settings)
+            root = self.settings.workdir.resolve()
+            executor = getattr(self.session.loop, "executor", None)
+            if executor is not None:
+                root = Path(executor.workspace.root).resolve()
             return WorkspaceChrome(
                 workdir=str(cwd),
                 model=self.settings.deepseek_model,
@@ -143,6 +154,7 @@ class OceanFrame:
                 max_tokens=self.settings.max_context_tokens,
                 git_branch=detect_git_branch(cwd),
                 version=__version__,
+                root=str(root),
             )
         return self._chrome or WorkspaceChrome(version=__version__)
 
@@ -170,7 +182,17 @@ def render_frame(
             Layout(name="gutter", size=_GUTTER),
             Layout(name="main", ratio=1),
         )
-        layout["mascot"].update(_MascotRail(chrome.workdir))
+        layout["mascot"].split_column(
+            Layout(name="sprite", size=_SPRITE_PANEL_ROWS),
+            Layout(name="rail", ratio=1),
+        )
+        layout["sprite"].update(_MascotRail(chrome.workdir))
+        root = chrome.root or chrome.workdir
+        layout["rail"].update(
+            _FileChangeRail(
+                root, files_focus=snap.focus == "files", changes_focus=snap.focus == "changes"
+            )
+        )
         layout["gutter"].update(_VRule())
         main = layout["main"]
     else:
@@ -178,15 +200,21 @@ def render_frame(
     main.split_column(
         Layout(name="hud", size=_HUD_ROWS),
         Layout(name="gap_hud", size=1),
-        Layout(name="chat", ratio=1),
+        Layout(name="tabs", size=1),
+        Layout(name="content", ratio=1),
         Layout(name="status", size=1),
         Layout(name="input", size=2 + max(1, len(lines))),
     )
     main["hud"].update(_Hud(chrome, snap))
     main["gap_hud"].update(_HRule())
-    main["chat"].update(_ChatPane(view))
+    main["tabs"].update(_TabBar())
+    hub = get_hub()
+    if hub.tab == "text":
+        main["content"].update(_TextPane())
+    else:
+        main["content"].update(_ChatPane(view))
     main["status"].update(_StatusBar(view))
-    main["input"].update(_InputBar(lines, hint))
+    main["input"].update(_InputBar(lines, hint, focused=snap.focus == "input"))
     frame = Layout()
     frame.split_column(
         Layout(name="north", size=1),
@@ -247,11 +275,87 @@ class _MascotRail:
 
     def __rich_console__(self, console: Console, options) -> Iterator[RenderableType]:
         yield Panel(
-            Align.center(mascot_placeholder(workdir=self.workdir), vertical="middle"),
+            mascot_placeholder(workdir=self.workdir),
             box=box.ROUNDED,
             border_style=UI_ICE,
             padding=(0, 0),
             expand=True,
+        )
+
+
+class _FileChangeRail:
+    """File tree and Changes as two flush panels, split 1:1."""
+
+    def __init__(
+        self, root: str = ".", *, files_focus: bool = False, changes_focus: bool = False
+    ) -> None:
+        self.root = root
+        self.files_focus = files_focus
+        self.changes_focus = changes_focus
+
+    def __rich_console__(self, console: Console, options) -> Iterator[RenderableType]:
+        pane = get_sidebar()
+        pane.set_root(self.root)
+        total = max(2, options.height or 12)
+        changes_h = total // 2
+        files_h = total - changes_h
+        inner = Layout()
+        inner.split_column(
+            Layout(name="files", size=files_h),
+            Layout(name="changes", size=changes_h),
+        )
+        inner["files"].update(_FilesPane(self.root, focused=self.files_focus))
+        inner["changes"].update(_ChangesPane(self.root, focused=self.changes_focus))
+        yield inner
+
+
+class _FilesPane:
+    """Workspace tree. Lives under the portrait, not inside it."""
+
+    def __init__(self, root: str = ".", *, focused: bool = False) -> None:
+        self.root = root
+        self.focused = focused
+
+    def __rich_console__(self, console: Console, options) -> Iterator[RenderableType]:
+        pane = get_sidebar()
+        pane.set_root(self.root)
+        inner_w = max(4, options.max_width - 4)
+        inner_h = max(1, (options.height or 8) - 2)
+        yield Panel(
+            pane.render_files(width=inner_w, height=inner_h, focused=self.focused),
+            title=cute_title("文件" + ("  ·  选择" if self.focused else "")),
+            title_align="left",
+            box=box.SQUARE,
+            border_style=UI_FOAM if self.focused else UI_CYAN,
+            padding=(0, 1),
+            expand=True,
+            subtitle=pane.file_hint or None,
+            subtitle_align="right",
+        )
+
+
+class _ChangesPane:
+    """Per-turn git / tool Changes. Separate box from the file tree."""
+
+    def __init__(self, root: str = ".", *, focused: bool = False) -> None:
+        self.root = root
+        self.focused = focused
+
+    def __rich_console__(self, console: Console, options) -> Iterator[RenderableType]:
+        pane = get_sidebar()
+        pane.set_root(self.root)
+        inner_w = max(4, options.max_width - 4)
+        inner_h = max(1, (options.height or 4) - 2)
+        yield Panel(
+            pane.render_changes(width=inner_w, height=inner_h, focused=self.focused),
+            title=cute_title("Changes" + ("  ·  选择" if self.focused else "")),
+            title_align="left",
+            box=box.SQUARE,
+            border_style=UI_FOAM if self.focused else UI_CYAN,
+            padding=(0, 1),
+            expand=True,
+            subtitle=pane.change_hint or None,
+            subtitle_align="right",
         )
 
 
@@ -277,6 +381,23 @@ class _Hud:
         )
 
 
+class _TabBar:
+    def __rich_console__(self, console: Console, options) -> Iterator[RenderableType]:
+        hub = get_hub()
+        line = Text()
+        for name in TABS:
+            label = _tab_label(name)
+            active = hub.tab == name
+            style = f"reverse bold {UI_FOAM}" if active else f"dim {UI_ICE}"
+            line.append(f" {label} ", style=style)
+            line.append(" ")
+        yield line
+
+
+def _tab_label(name: str) -> str:
+    return TAB_LABELS[name]
+
+
 class _ChatPane:
     def __init__(self, view: ChatView) -> None:
         self.view = view
@@ -299,6 +420,41 @@ class _ChatPane:
         )
 
 
+class _TextPane:
+    def __rich_console__(self, console: Console, options) -> Iterator[RenderableType]:
+        hub = get_hub()
+        width = max(8, options.max_width - 4)
+        height = max(1, (options.height or 8) - 2)
+        lines = hub.visible_styled(height)
+        body = Text()
+        start = hub.file_scroll
+        gutter = 0 if hub.file_mode == "diff" else 5
+        limit = max(1, width - gutter)
+        for i, line in enumerate(lines):
+            if i:
+                body.append("\n")
+            if hub.file_mode != "diff":
+                body.append(f"{start + i + 1:>4} ", style="muted")
+            clipped = line.copy()
+            clipped.overflow = "crop"
+            clipped.no_wrap = True
+            if cell_len(clipped.plain) > limit:
+                clipped.truncate(limit)
+            body.append_text(clipped)
+        title = hub.file_title or "文本"
+        if hub.file_mode == "diff":
+            title = f"改动  {title}"
+        yield Panel(
+            body,
+            title=cute_title(title),
+            title_align="left",
+            box=box.HEAVY,
+            border_style=UI_ICE,
+            padding=(0, 1),
+            expand=True,
+        )
+
+
 class _StatusBar:
     def __init__(self, view: ChatView) -> None:
         self.view = view
@@ -313,18 +469,29 @@ class _StatusBar:
             left = Text(f" {spin}  {snap.status}", style=UI_ICE)
         else:
             left = Text(f" {GLYPH_WAVE} 就绪", style=UI_ICE)
-        right = Text(
-            "Enter 发送  ·  Ctrl+C 离开  ·  /help  ·  PgUp 对话  ·  ← → 输入",
-            style="muted",
-        )
+        if snap.focus == "files":
+            right = Text(
+                "j/k 滚轮  ·  Enter 展开/打开  ·  d 改动  ·  Tab Changes",
+                style="muted",
+            )
+        elif snap.focus == "changes":
+            right = Text("j/k 滚轮  ·  Enter 改动  ·  Tab 对话  ·  Esc 输入", style="muted")
+        elif snap.focus == "text":
+            right = Text("j/k 滚动  ·  F1 对话  ·  Tab 文件", style="muted")
+        else:
+            right = Text(
+                "Tab 文件  ·  Ctrl+T 标签  ·  Enter 发送  ·  /help",
+                style="muted",
+            )
         row.add_row(left, right)
         return row
 
 
 class _InputBar:
-    def __init__(self, lines: tuple[str, ...], hint: str) -> None:
+    def __init__(self, lines: tuple[str, ...], hint: str, *, focused: bool = True) -> None:
         self.lines = lines
         self.hint = hint
+        self.focused = focused
 
     def __rich_console__(self, console: Console, options) -> Iterator[RenderableType]:
         body = Text(style="prompt", no_wrap=True, overflow="crop")
@@ -335,7 +502,7 @@ class _InputBar:
         yield Panel(
             body,
             box=box.DOUBLE,
-            border_style=UI_FOAM,
+            border_style=UI_FOAM if self.focused else f"dim {UI_CYAN}",
             padding=(0, 1),
             expand=True,
             title=cute_title("输入"),
@@ -413,8 +580,14 @@ def _input_scroll_hint(offset: int, visible: int, total: int) -> str:
 
 
 def _input_viewport(snap: ViewSnapshot, inner_width: int) -> tuple[tuple[str, ...], str]:
+    hub = get_hub()
     if snap.busy:
         return (f"{GLYPH_WAVE} 思考中，Ctrl+C 取消",), ""
+    if hub.tab == "text" and snap.focus not in {"files", "changes", "input"}:
+        title = hub.file_title or "文本"
+        total = len(hub.file_lines) or 1
+        vis = 12
+        return (f"{GLYPH_WAVE} {title}",), _input_scroll_hint(hub.file_scroll, vis, total)
     wrapped = _wrap_cells(PROMPT + snap.input_buffer, max(8, inner_width))
     visible, offset = _input_window(wrapped, _INPUT_MAX_BODY)
     return tuple(visible), _input_scroll_hint(offset, len(visible), len(wrapped))
@@ -429,7 +602,6 @@ def _fit_chat(snap: ViewSnapshot, width: int, height: int) -> RenderableType:
     if not items:
         welcome = Text(justify="center")
         welcome.append(f"{PRODUCT_NAME}\n", style=f"bold {UI_FOAM}")
-        welcome.append("在下方输入任务。\n", style=UI_ICE)
         welcome.append(snap.placeholder, style="muted")
         return Align.center(welcome, vertical="middle")
     inner = max(8, width)
@@ -519,22 +691,38 @@ def _render_item(item: ChatItem, width: int) -> RenderableType:
     )
 
 
+def stdin_is_ready(ready: list[object], fd: int) -> bool:
+    """``select`` returns the same objects we passed in (fds or file objects)."""
+    if fd in ready:
+        return True
+    for item in ready:
+        fileno = getattr(item, "fileno", None)
+        if not callable(fileno):
+            continue
+        try:
+            if fileno() == fd:
+                return True
+        except (OSError, ValueError, AttributeError):
+            continue
+    return False
+
+
 @contextmanager
-def stdin_cbreak(fd: int) -> Iterator[None]:
+def stdin_cbreak(fd: int) -> Iterator[object | None]:
     try:
         import termios
         import tty
     except ImportError:  # pragma: no cover - Windows
-        yield
+        yield None
         return
     old = termios.tcgetattr(fd)
     try:
         tty.setcbreak(fd)
-        sys.stdout.write("\x1b[?2004h")
+        sys.stdout.write("\x1b[?2004h\x1b[?1000h\x1b[?1006h")
         sys.stdout.flush()
-        yield
+        yield old
     finally:
-        sys.stdout.write("\x1b[?2004l")
+        sys.stdout.write("\x1b[?2004l\x1b[?1000l\x1b[?1006l")
         sys.stdout.flush()
         termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
@@ -552,6 +740,10 @@ class OceanTui:
         self.settings = settings
         self.view = view
         self._worker: threading.Thread | None = None
+        self._live: Live | None = None
+        self._fd = 0
+        self._term_old: object | None = None
+        self._nav = NavKeys()
 
     def run(self) -> int:
         if self.console.size.width < 40:
@@ -561,7 +753,9 @@ class OceanTui:
         editor = LineEditor()
         self.view.set_input(editor.display())
         fd = sys.stdin.fileno()
+        self._fd = fd
         branch = detect_git_branch(self.settings.workdir)
+        get_sidebar().set_root(self.settings.workdir)
         frame = OceanFrame(
             self.view,
             session=self.session,
@@ -580,11 +774,14 @@ class OceanTui:
                 redirect_stdout=False,
                 redirect_stderr=False,
                 vertical_overflow="crop",
-            ):
-                with stdin_cbreak(fd):
+            ) as live:
+                self._live = live
+                with stdin_cbreak(fd) as saved:
+                    self._term_old = saved
                     self._await_boot(fd, frame)
                     self._loop(fd, editor)
         finally:
+            self._live = None
             if self.view.snapshot().busy:
                 self.session.loop.state.cancel()
             if self._worker is not None:
@@ -616,12 +813,12 @@ class OceanTui:
     def _loop(self, fd: int, editor: LineEditor) -> None:
         while True:
             try:
-                ready, _, _ = select.select([sys.stdin], [], [], 0.08)
+                ready, _, _ = select.select([fd], [], [], 0.08)
             except (InterruptedError, KeyboardInterrupt):
                 if self._on_interrupt(editor):
                     return
                 continue
-            if not ready:
+            if not stdin_is_ready(ready, fd):
                 continue
             try:
                 data = os.read(fd, 64)
@@ -634,12 +831,56 @@ class OceanTui:
                     self._on_interrupt(editor)
                 continue
             try:
-                if self._apply(editor.feed(data), editor) == "quit":
+                result = self._route_keys(data, editor)
+                if result == "quit":
                     return
             except KeyboardInterrupt:
                 if self._on_interrupt(editor):
                     return
-            self.view.set_input(editor.display())
+            self.view.set_input(
+                editor.display(active=self.view.snapshot().focus == "input")
+            )
+
+    def _route_keys(self, data: bytes, editor: LineEditor) -> str | None:
+        focus = self.view.snapshot().focus
+        if focus in {"files", "changes"}:
+            return self._apply_nav(self._nav.feed(data), editor)
+        if focus == "text":
+            return self._apply_text(self._nav.feed(data), editor)
+        return self._apply(editor.feed(data), editor)
+
+    def _handle_global(self, action: KeyAction) -> bool:
+        if action.kind == "main_tab":
+            if action.text in TABS:
+                get_hub().set_tab(action.text)
+                self._focus_main()
+            return True
+        if action.kind == "cycle_tab":
+            get_hub().cycle_tab()
+            self._focus_main()
+            return True
+        if action.kind == "wheel":
+            self._wheel(int(action.text or "0"))
+            return True
+        return False
+
+    def _focus_main(self) -> None:
+        if get_hub().tab == "text":
+            self.view.set_focus("text")
+        else:
+            self.view.set_focus("input")
+
+    def _wheel(self, delta: int) -> None:
+        focus = self.view.snapshot().focus
+        hub = get_hub()
+        if focus in {"files", "changes"}:
+            get_sidebar().move(delta, focus)
+        elif focus == "text" or hub.tab == "text":
+            hub.scroll_text(delta, 16)
+        elif delta < 0:
+            self.view.scroll_up(-delta)
+        else:
+            self.view.scroll_down(delta)
 
     def _apply(self, actions: list[KeyAction], editor: LineEditor) -> str | None:
         busy = self.view.snapshot().busy
@@ -647,6 +888,8 @@ class OceanTui:
             if action.kind == "interrupt":
                 if self._on_interrupt(editor):
                     return "quit"
+                continue
+            if self._handle_global(action):
                 continue
             if busy:
                 continue
@@ -660,9 +903,62 @@ class OceanTui:
                 self.view.scroll_down()
             elif action.kind == "scroll_bottom":
                 self.view.scroll_bottom()
+            elif action.kind == "cycle_focus":
+                self.view.set_focus("files")
             elif action.kind == "submit":
                 if self._submit(action.text):
                     return "quit"
+        return None
+
+    def _apply_nav(self, actions: list[KeyAction], editor: LineEditor) -> str | None:
+        for action in actions:
+            if action.kind == "interrupt":
+                if self._on_interrupt(editor):
+                    return "quit"
+                continue
+            if self._handle_global(action):
+                continue
+            if action.kind == "cycle_focus":
+                focus = self.view.snapshot().focus
+                if focus == "files":
+                    self.view.set_focus("changes")
+                else:
+                    self._focus_main()
+            elif action.kind == "focus_input":
+                self._focus_main()
+            elif action.kind == "eof":
+                return "quit"
+            elif action.kind == "move":
+                pane = self.view.snapshot().focus
+                if pane in {"files", "changes"}:
+                    get_sidebar().move(int(action.text or "0"), pane)
+            elif action.kind == "jump_changes":
+                self.view.set_focus("changes")
+                get_sidebar().jump_changes()
+            elif action.kind == "open":
+                self._open_selected()
+            elif action.kind == "diff":
+                self._open_diff()
+        return None
+
+    def _apply_text(self, actions: list[KeyAction], editor: LineEditor) -> str | None:
+        for action in actions:
+            if action.kind == "interrupt":
+                if self._on_interrupt(editor):
+                    return "quit"
+                continue
+            if self._handle_global(action):
+                continue
+            if action.kind in {"cycle_focus", "focus_input"}:
+                if action.kind == "cycle_focus":
+                    self.view.set_focus("files")
+                else:
+                    get_hub().set_tab("chat")
+                    self.view.set_focus("input")
+            elif action.kind == "move":
+                get_hub().scroll_text(int(action.text or "0"), 16)
+            elif action.kind == "open":
+                pass
         return None
 
     def _on_interrupt(self, editor: LineEditor) -> bool:
@@ -701,11 +997,117 @@ class OceanTui:
         outcome = dispatch_slash(command, self.session, self.settings)
         if outcome.quit:
             return True
+        if outcome.kind == "vim":
+            self._open_vim(outcome.body or None)
+            return False
         if command.split()[0] == "/reset":
             self.view.clear()
             get_bank().set_pose("idle")
+            get_sidebar().clear_session()
+            self.view.set_focus("input")
         self._show_outcome(outcome)
         return False
+
+    def _workspace_root(self) -> Path:
+        executor = getattr(self.session.loop, "executor", None)
+        if executor is not None:
+            return Path(executor.workspace.root).resolve()
+        return self.settings.workdir.resolve()
+
+    def _open_selected(self) -> None:
+        focus = self.view.snapshot().focus
+        pane = "changes" if focus == "changes" else "files"
+        item = get_sidebar().selected(pane)
+        if item is None:
+            self.view.append("note", "没有可打开的文件。")
+            return
+        if item.kind == "dir":
+            get_sidebar().toggle_dir(item.rel)
+            return
+        if item.kind == "change":
+            self._open_diff(item.rel)
+            return
+        self._open_text(item.rel)
+
+    def _open_text(self, rel: str) -> None:
+        err = get_hub().open_file(self._workspace_root(), rel)
+        if err:
+            self.view.append("note", err)
+            return
+        self.view.set_focus("text")
+
+    def _open_vim(self, rel: str | None) -> None:
+        root = self._workspace_root()
+        path = (rel or "").strip()
+        if not path:
+            item = get_sidebar().selected("files")
+            path = item.rel if item is not None and item.kind != "dir" else ""
+        argv = file_open_argv(root, path) if path else None
+        if argv is None:
+            if path:
+                self._open_text(path)
+                return
+            self.view.append("note", "请选中一个文件，或使用 /vim 路径")
+            return
+        self._run_outside(argv, cwd=root)
+
+    def _open_diff(self, rel: str | None = None) -> None:
+        root = self._workspace_root()
+        path = (rel or "").strip()
+        if not path:
+            item = get_sidebar().selected(
+                "changes" if self.view.snapshot().focus == "changes" else "files"
+            )
+            path = item.rel if item is not None else ""
+        if not path:
+            self.view.append("note", "没有可查看的 Changes。按 c 跳到 Changes。")
+            return
+        err = get_hub().open_diff(root, path)
+        if err:
+            self.view.append("note", err)
+            return
+        self.view.set_focus("text")
+
+    def _run_outside(
+        self,
+        argv: list[str],
+        *,
+        cwd: Path,
+        stdin_bytes: bytes | None = None,
+        banner: bool = False,
+    ) -> None:
+        live = self._live
+        if live is None:
+            return
+        live.stop()
+        fd = self._fd
+        old = self._term_old
+        try:
+            import termios
+            import tty
+        except ImportError:  # pragma: no cover - Windows
+            termios = None  # type: ignore[assignment]
+            tty = None  # type: ignore[assignment]
+        try:
+            if termios is not None and old is not None:
+                termios.tcsetattr(fd, termios.TCSADRAIN, old)
+            sys.stdout.write("\x1b[?25h")
+            if banner:
+                sys.stdout.write(f"\n{GLYPH_WAVE} 终端  ·  exit 返回 {PRODUCT_NAME}\n")
+            sys.stdout.flush()
+            if stdin_bytes is not None:
+                subprocess.run(argv, cwd=cwd, input=stdin_bytes, check=False)
+            else:
+                subprocess.run(argv, cwd=cwd, check=False)
+        except OSError as exc:
+            self.view.append("error", str(exc))
+        finally:
+            if tty is not None:
+                tty.setcbreak(fd)
+                sys.stdout.write("\x1b[?2004h\x1b[?1000h\x1b[?1006h")
+                sys.stdout.flush()
+            live.start()
+            get_sidebar().invalidate()
 
     def _show_outcome(self, outcome: SlashOutcome) -> None:
         if outcome.kind in ("help", "tools", "status"):

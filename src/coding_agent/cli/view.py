@@ -22,6 +22,7 @@ class ViewSnapshot:
     input_buffer: str
     scroll: int
     placeholder: str
+    focus: str
 
 
 class ChatView:
@@ -35,6 +36,7 @@ class ChatView:
         self._input = ""
         self._scroll = 0
         self._placeholder = "在下方输入任务。Enter 发送，Ctrl+C 离开，/help 查看命令。"
+        self._focus = "input"
 
     def append(self, kind: str, text: str, *, ok: bool = True, title: str = "") -> None:
         with self._lock:
@@ -71,6 +73,10 @@ class ChatView:
         with self._lock:
             self._scroll = 0
 
+    def set_focus(self, name: str) -> None:
+        with self._lock:
+            self._focus = name if name in {"input", "files", "changes", "text"} else "input"
+
     def snapshot(self) -> ViewSnapshot:
         with self._lock:
             return ViewSnapshot(
@@ -80,4 +86,5 @@ class ChatView:
                 input_buffer=self._input,
                 scroll=self._scroll,
                 placeholder=self._placeholder,
+                focus=self._focus,
             )

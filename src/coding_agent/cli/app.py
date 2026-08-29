@@ -20,11 +20,11 @@ EXIT_AUTH = 3
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog=CLI_NAME,
-        description=f"{PRODUCT_NAME}: a from-scratch CLI coding agent for DeepSeek",
+        description=f"{PRODUCT_NAME}: a from-scratch CLI coding agent",
     )
     parser.add_argument("-V", "--version", action="version", version=f"{CLI_NAME} {__version__}")
     parser.add_argument("--workdir", type=Path, default=None, help="workspace root (default cwd)")
-    parser.add_argument("--model", default=None, help="DeepSeek model id")
+    parser.add_argument("--model", default=None, help="model id")
     parser.add_argument("--think", action="store_true", help="enable thinking mode")
     parser.add_argument("--no-stream", action="store_true", help="disable SSE streaming")
     parser.add_argument("--verbose", action="store_true", help="debug logging")

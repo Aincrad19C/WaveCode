@@ -17,9 +17,13 @@ HELP_TEXT = f"""斜杠命令：
   /think on|off  切换 thinking 模式
   /mascot        列出立绘包
   /mascot 包名   切换立绘包
+  /vim [路径]    用外部 vim / $EDITOR 打开
   /quit /exit /q 退出
 
 其余输入将作为编程任务发给 {PRODUCT_NAME}。行末 \\ 可续行。
+Tab 在输入、文件、Changes 之间循环。F1 对话 / F2 文本；Ctrl+T 切换标签。
+文件栏：j/k 或滚轮选择，Enter 展开目录或打开文件（常见语言高亮）。
+Changes：+ 新增（绿）/ − 删除（红）/ ~ 修改；Enter 用红绿对照，不是原始 diff。
 PgUp / PgDn 滚动对话，↑ / ↓ 翻历史输入。
 长输入会折行；超出输入框时用 ← → / Home / End 带动底部滚动条。"""
 
@@ -75,5 +79,7 @@ def dispatch_slash(command: str, session: AgentSession, settings: Settings) -> S
             kind, body = bank.apply(arg)
             title = "mascot" if kind == "status" else ""
             return SlashOutcome(kind=kind, title=title, body=body)
+        case "/vim":
+            return SlashOutcome(kind="vim", body=arg.strip())
         case _:
             return SlashOutcome(kind="warn", body=f"未知命令 {name}（不会发给模型）")

@@ -7,7 +7,7 @@ import pytest
 
 import coding_agent
 from coding_agent.cli.app import EXIT_CONFIG, main
-from coding_agent.cli.branding import CLI_NAME, PRODUCT_NAME
+from coding_agent.cli.branding import CLI_NAME, PRODUCT_NAME, TAGLINE
 
 
 def test_help_exits_zero(capsys: pytest.CaptureFixture[str]) -> None:
@@ -103,9 +103,15 @@ def test_wave_strip_is_ocean_band() -> None:
     assert "✦" not in strip.plain
     assert "✧" not in strip.plain
     styles = " ".join(str(span.style) for span in strip.spans).lower()
-    assert "#d7f4ff" not in styles
+    assert "#ffffff" in styles
     assert "#3ec8e8" in styles
-    assert "#8ec8e6" in styles
+    assert "#d7f4ff" not in styles
+    white_cells = sum(
+        span.end - span.start
+        for span in strip.spans
+        if span.style and "#ffffff" in str(span.style).lower()
+    )
+    assert 1 <= white_cells <= 3
 
 
 def test_ocean_banner_prints_wavemio() -> None:
@@ -122,7 +128,8 @@ def test_ocean_banner_prints_wavemio() -> None:
     )
     out = buf.getvalue()
     assert PRODUCT_NAME in out
-    assert "DeepSeek" in out
+    assert "DeepSeek" not in out
+    assert TAGLINE in out
     assert "已就绪" in out
     assert "鲸鱼娘" not in out
     assert "✦" not in out
@@ -147,8 +154,8 @@ def test_boot_panel_boat_draws_channel() -> None:
     console.print(boot_panel(80, 24, 0.55))
     out = console.export_text()
     assert PRODUCT_NAME in out
-    assert "DeepSeek" in out
-    assert "✦" not in out
+    assert "DeepSeek" not in out
+    assert TAGLINE in out
     assert "┏" in out
     assert "█" in out
     assert set("▁▂▃▄▅▆▇") & set(out)
@@ -177,10 +184,19 @@ def test_boot_panel_boat_draws_channel() -> None:
     inked = [
         span
         for span in mark.renderable.spans
-        if span.style and "#ffffff" in str(span.style).lower()
+        if span.style
+        and "#ffffff" in str(span.style).lower()
+        and "on #" in str(span.style).lower()
     ]
     assert inked
-    assert all("on #000000" in str(span.style).lower() for span in inked)
+    foam = [
+        span
+        for span in sailing.renderable.spans
+        if span.style
+        and "#ffffff" in str(span.style).lower()
+        and "on #" not in str(span.style).lower()
+    ]
+    assert foam
     early_buf = StringIO()
     early = Console(
         file=early_buf,
@@ -192,6 +208,28 @@ def test_boot_panel_boat_draws_channel() -> None:
     )
     early.print(boot_panel(80, 24, 0.05))
     assert PRODUCT_NAME not in early.export_text()
+
+
+def test_boot_sea_whitecaps_are_sparse() -> None:
+    from coding_agent.cli.boot import boot_panel
+
+    panel = boot_panel(80, 24, 0.05)
+    white = 0
+    total = 0
+    foam = 0
+    for span in panel.renderable.spans:
+        if not span.style:
+            continue
+        style = str(span.style).lower()
+        n = span.end - span.start
+        total += n
+        if "#ffffff" in style and "on #" not in style:
+            white += n
+        if "#d7f4ff" in style:
+            foam += n
+    assert total > 400
+    assert foam == 0
+    assert white < total // 25
 
 
 def test_ocean_frame_skip_boot_shows_workspace() -> None:
@@ -299,6 +337,7 @@ def test_ocean_frame_holds_splash_until_reveal_finishes() -> None:
 
 def test_tui_sink_hides_reasoning_and_keeps_activity() -> None:
     from coding_agent.cli.renderer import TuiEventSink, describe_tool
+    from coding_agent.cli.sidebar import reset_sidebar
     from coding_agent.cli.sprites.bank import reset_bank
     from coding_agent.cli.view import ChatView
     from coding_agent.domain.events import (
@@ -316,6 +355,7 @@ def test_tui_sink_hides_reasoning_and_keeps_activity() -> None:
     view = ChatView()
     sink = TuiEventSink(view)
     bank = reset_bank()
+    reset_sidebar()
     assert bank.pose == "idle"
     sink.on_event(UserMessageAccepted(text="列出文件"))
     assert bank.pose == "think"
@@ -343,6 +383,32 @@ def test_tui_sink_hides_reasoning_and_keeps_activity() -> None:
     assert snap.busy is False
 
 
+def test_tui_sink_records_write_in_changes() -> None:
+    from coding_agent.cli.renderer import TuiEventSink
+    from coding_agent.cli.sidebar import get_sidebar, reset_sidebar
+    from coding_agent.cli.sprites.bank import reset_bank
+    from coding_agent.cli.view import ChatView
+    from coding_agent.domain.events import (
+        ToolCallScheduled,
+        ToolExecutionFinished,
+        UserMessageAccepted,
+    )
+    from coding_agent.domain.messages import ToolCallRequest
+    from coding_agent.domain.results import ToolResult
+
+    reset_bank()
+    reset_sidebar()
+    sink = TuiEventSink(ChatView())
+    sink.on_event(UserMessageAccepted(text="写一个 hello.py"))
+    call = ToolCallRequest("1", "write_file", '{"path": "hello.py", "content": "x"}')
+    sink.on_event(ToolCallScheduled(call=call))
+    sink.on_event(
+        ToolExecutionFinished(result=ToolResult("1", "write_file", True, "wrote hello.py", {}))
+    )
+    changes = get_sidebar().changes()
+    assert any(item.path == "hello.py" and item.code == "A" for item in changes)
+
+
 def test_tui_frame_fills_terminal_like_top() -> None:
     from io import StringIO
 
@@ -350,11 +416,13 @@ def test_tui_frame_fills_terminal_like_top() -> None:
 
     from coding_agent.cli.branding import GLYPH_WAVE
     from coding_agent.cli.chrome import WorkspaceChrome
+    from coding_agent.cli.sidebar import reset_sidebar
     from coding_agent.cli.sprites.bank import reset_bank
     from coding_agent.cli.tui import render_frame
     from coding_agent.cli.view import ChatView
 
     reset_bank()
+    reset_sidebar()
     view = ChatView()
     view.append("user", "列出文件")
     view.append("tool", "List .", ok=True)
@@ -386,6 +454,10 @@ def test_tui_frame_fills_terminal_like_top() -> None:
     assert "预留" not in out
     assert "工作区" in out
     assert "对话" in out
+    assert "文本" in out
+    assert "终端" not in out
+    assert "文件" in out
+    assert "Changes" in out
     assert "输入" in out
     assert "你" in out
     assert "wavemio-proj" in out
@@ -393,9 +465,9 @@ def test_tui_frame_fills_terminal_like_top() -> None:
     assert "列出文件" in out
     assert "当前目录是空的。" in out
     assert "List ." in out
-    assert f"{GLYPH_WAVE} wavemio ›" in out
+    assert f"{GLYPH_WAVE} {CLI_NAME} ›" in out
     assert "已就绪" in out
-    assert "DeepSeek" in out
+    assert "DeepSeek" not in out
     assert "目录" in out
     assert "模型" in out
     assert "thinking" in out
@@ -411,6 +483,113 @@ def test_tui_frame_fills_terminal_like_top() -> None:
     assert "╝" in out
     for banned in ("鲸鱼娘", "鲸鱼酿", "像素鲸鱼娘"):
         assert banned not in out
+
+
+def test_file_change_rail_splits_one_to_one() -> None:
+    from io import StringIO
+
+    from rich.console import Console
+    from rich.layout import Layout
+
+    from coding_agent.cli.sidebar import reset_sidebar
+    from coding_agent.cli.tui import _FileChangeRail
+
+    reset_sidebar()
+    height = 20
+    console = Console(
+        file=StringIO(),
+        width=28,
+        height=height,
+        force_terminal=True,
+        color_system=None,
+        record=True,
+    )
+    frame = Layout(size=height)
+    frame.update(_FileChangeRail("."))
+    console.print(frame)
+    lines = console.export_text().splitlines()
+    while lines and not lines[-1].strip():
+        lines.pop()
+    files_at = next(i for i, line in enumerate(lines) if "文件" in line)
+    changes_at = next(i for i, line in enumerate(lines) if "Changes" in line)
+    files_h = changes_at - files_at
+    changes_h = len(lines) - changes_at
+    assert files_h == changes_h
+    assert files_h == height // 2
+
+
+def test_tui_file_pane_lists_workspace_below_portrait(tmp_path) -> None:
+    from io import StringIO
+
+    from rich.console import Console
+
+    from coding_agent.cli.chrome import WorkspaceChrome
+    from coding_agent.cli.sidebar import reset_sidebar
+    from coding_agent.cli.sprites.bank import reset_bank
+    from coding_agent.cli.tui import render_frame
+    from coding_agent.cli.view import ChatView
+
+    (tmp_path / "alpha.py").write_text("a\n", encoding="utf-8")
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "pkg" / "beta.py").write_text("b\n", encoding="utf-8")
+    reset_bank()
+    reset_sidebar()
+    chrome = WorkspaceChrome(workdir=str(tmp_path), root=str(tmp_path), version="2.7.0")
+    buf = StringIO()
+    console = Console(
+        file=buf,
+        width=80,
+        height=40,
+        force_terminal=True,
+        color_system=None,
+        record=True,
+    )
+    console.print(render_frame(ChatView(), chrome=chrome, width=80))
+    out = console.export_text()
+    assert "文件" in out
+    assert "alpha.py" in out
+    assert "pkg/" in out
+    assert "beta.py" not in out
+    assert "Changes" in out
+    assert "（无）" in out
+    assert "对话" in out
+    assert "文本" in out
+    assert "终端" not in out
+    assert out.count("在下方输入任务") == 1
+    assert "Enter 发送" in out
+
+
+def test_tui_text_tab_shows_file_contents(tmp_path) -> None:
+    from io import StringIO
+
+    from rich.console import Console
+
+    from coding_agent.cli.chrome import WorkspaceChrome
+    from coding_agent.cli.hub import get_hub
+    from coding_agent.cli.tui import render_frame
+    from coding_agent.cli.view import ChatView
+
+    (tmp_path / "note.md").write_text("alpha-line\nbeta-line\n", encoding="utf-8")
+    hub = get_hub()
+    assert hub.open_file(tmp_path, "note.md") == ""
+    buf = StringIO()
+    console = Console(
+        file=buf,
+        width=80,
+        height=32,
+        force_terminal=True,
+        color_system=None,
+        record=True,
+    )
+    console.print(render_frame(ChatView(), chrome=WorkspaceChrome(version="2.9.0"), width=80))
+    out = console.export_text()
+    assert "alpha-line" in out
+    assert "note.md" in out
+    hub.cycle_tab()
+    console.print(render_frame(ChatView(), chrome=WorkspaceChrome(version="2.10.0"), width=80))
+    chat_out = console.export_text()
+    assert "对话" in chat_out
+    assert "终端" not in chat_out
 
 
 def test_line_editor_submit_utf8_history_and_continue() -> None:
@@ -443,6 +622,13 @@ def test_line_editor_page_keys_and_backspace() -> None:
     assert actions[0].kind == "page_up"
     actions = editor.feed(b"\x03")
     assert actions[0].kind == "interrupt"
+    actions = editor.feed(b"\t")
+    assert actions[0].kind == "cycle_focus"
+    assert editor.feed(b"\x14")[0].kind == "cycle_tab"
+    f1 = editor.feed(b"\x1b[11~")
+    assert f1[0].kind == "main_tab"
+    assert f1[0].text == "chat"
+    assert "█" not in editor.display(active=False)
 
 
 def test_dispatch_slash_help_and_quit() -> None:
@@ -456,6 +642,10 @@ def test_dispatch_slash_help_and_quit() -> None:
     assert help_out.kind == "help"
     assert "/reset" in help_out.body
     assert "/mascot" in help_out.body
+    assert "/term" not in help_out.body
+    assert "/vim" in help_out.body
+    assert dispatch_slash("/term", dummy, settings).kind == "warn"  # type: ignore[arg-type]
+    assert dispatch_slash("/vim src/a.py", dummy, settings).body == "src/a.py"  # type: ignore[arg-type]
     unknown = dispatch_slash("/nope", dummy, settings)  # type: ignore[arg-type]
     assert unknown.kind == "warn"
 
@@ -628,6 +818,82 @@ def test_tui_slash_help_and_submit_ask() -> None:
     assert view.snapshot().busy is False
 
 
+def test_tui_tab_focuses_files_and_nav_moves(tmp_path) -> None:
+    from types import SimpleNamespace
+
+    from coding_agent.agent.state import LoopState
+    from coding_agent.cli.editor import KeyAction, LineEditor, NavKeys
+    from coding_agent.cli.sidebar import reset_sidebar
+    from coding_agent.cli.tui import OceanTui
+    from coding_agent.cli.view import ChatView
+    from fakes.settings import make_settings
+
+    (tmp_path / "a.py").write_text("a\n", encoding="utf-8")
+    (tmp_path / "b.py").write_text("b\n", encoding="utf-8")
+    pane = reset_sidebar()
+    pane.set_root(tmp_path)
+    view = ChatView()
+    settings = make_settings(workdir=tmp_path)
+    session = SimpleNamespace(
+        loop=SimpleNamespace(state=LoopState(), settings=settings),
+        reset=lambda: None,
+    )
+    tui = OceanTui(session, None, settings, view)  # type: ignore[arg-type]
+    editor = LineEditor()
+    tui._apply([KeyAction("cycle_focus")], editor)
+    assert view.snapshot().focus == "files"
+    first = pane.selected("files")
+    tui._apply_nav(NavKeys().feed(b"j"), editor)
+    assert pane.selected("files") != first
+    tui._apply_nav([KeyAction("cycle_focus")], editor)
+    assert view.snapshot().focus == "changes"
+    tui._apply_nav([KeyAction("focus_input")], editor)
+    assert view.snapshot().focus == "input"
+
+
+def test_stdin_is_ready_accepts_fd_or_file() -> None:
+    from coding_agent.cli.tui import stdin_is_ready
+
+    class _FakeStdin:
+        def fileno(self) -> int:
+            return 0
+
+    assert stdin_is_ready([0], 0) is True
+    assert stdin_is_ready([_FakeStdin()], 0) is True
+    assert stdin_is_ready([], 0) is False
+    assert stdin_is_ready([1], 0) is False
+
+
+def test_tui_enter_opens_text_tab(tmp_path) -> None:
+    from types import SimpleNamespace
+
+    from coding_agent.agent.state import LoopState
+    from coding_agent.cli.editor import KeyAction, LineEditor
+    from coding_agent.cli.hub import get_hub
+    from coding_agent.cli.sidebar import reset_sidebar
+    from coding_agent.cli.tui import OceanTui
+    from coding_agent.cli.view import ChatView
+    from fakes.settings import make_settings
+
+    (tmp_path / "note.md").write_text("hello\nworld\n", encoding="utf-8")
+    pane = reset_sidebar()
+    pane.set_root(tmp_path)
+    view = ChatView()
+    settings = make_settings(workdir=tmp_path)
+    session = SimpleNamespace(
+        loop=SimpleNamespace(state=LoopState(), settings=settings),
+        reset=lambda: None,
+    )
+    tui = OceanTui(session, None, settings, view)  # type: ignore[arg-type]
+    editor = LineEditor()
+    tui._apply_nav([KeyAction("open")], editor)
+    hub = get_hub()
+    assert hub.tab == "text"
+    assert hub.file_lines == ("hello", "world")
+    assert view.snapshot().focus == "text"
+
+
+
 def test_input_viewport_wraps_and_follows_cursor() -> None:
     from coding_agent.cli.tui import _INPUT_MAX_BODY, _input_viewport, _thumb_bar, _wrap_cells
     from coding_agent.cli.view import ChatView
@@ -682,7 +948,7 @@ def test_input_bar_grows_and_shows_scrollbar_in_frame() -> None:
     console.print(render_frame(view, chrome=chrome, width=40))
     out = console.export_text()
     assert out.count("w") >= 90
-    assert "wavemio ›" in out
+    assert f"{CLI_NAME} ›" in out
 
     view.set_input(("w" * 500) + "█")
     console.print(render_frame(view, chrome=chrome, width=40))
@@ -704,6 +970,11 @@ def test_chat_view_scroll_and_clear() -> None:
     assert view.snapshot().scroll == 1
     view.scroll_bottom()
     assert view.snapshot().scroll == 0
+    assert view.snapshot().focus == "input"
+    view.set_focus("files")
+    assert view.snapshot().focus == "files"
+    view.set_focus("changes")
+    assert view.snapshot().focus == "changes"
     view.clear()
     assert view.snapshot().items == ()
 

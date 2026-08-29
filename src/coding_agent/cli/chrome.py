@@ -30,10 +30,18 @@ from coding_agent.cli.theme import (
     UI_ICE,
     UI_PRIMARY,
     UI_WARN,
+    UI_WHITE,
 )
 
 _WAVE_UNITS = "▁▂▃▄▅▆▇▆▅▄▃▂"
-_WAVE_COLORS = (UI_DEEP, UI_PRIMARY, UI_CYAN, UI_ICE, UI_CYAN, UI_PRIMARY)
+_WAVE_COLORS = (
+    UI_DEEP,
+    UI_PRIMARY,
+    UI_CYAN,
+    UI_PRIMARY,
+    UI_ICE,
+    UI_DEEP,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,6 +58,7 @@ class WorkspaceChrome:
     max_tokens: int = 32000
     git_branch: str = ""
     version: str = ""
+    root: str = ""  # workspace root for the file tree; empty → workdir
 
 
 def short_home_path(path: Path | str) -> str:
@@ -190,7 +199,10 @@ def wave_strip(width: int, *, phase: int = 0) -> Text:
     n = len(_WAVE_UNITS)
     for i in range(width):
         tick = i + phase
-        strip.append(_WAVE_UNITS[tick % n], style=_WAVE_COLORS[i % len(_WAVE_COLORS)])
+        style = _WAVE_COLORS[i % len(_WAVE_COLORS)]
+        if (i * 13 + phase * 7 + 3) % 19 == 0:
+            style = UI_WHITE
+        strip.append(_WAVE_UNITS[tick % n], style=style)
     return strip
 
 

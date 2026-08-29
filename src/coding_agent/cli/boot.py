@@ -53,7 +53,7 @@ _BOAT = (
     "   ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    ",
 )
 
-# 6x7 block glyphs. Built so WAVEMIO reads at banner scale, not one cell.
+# 6x8 block glyphs. Built so WAVECODE reads at banner scale, not one cell.
 _GLYPHS: dict[str, tuple[str, ...]] = {
     "W": (
         "██    ██",
@@ -111,6 +111,22 @@ _GLYPHS: dict[str, tuple[str, ...]] = {
         " ██  ██ ",
         "  ████  ",
     ),
+    "C": (
+        "  ████  ",
+        " ██  ██ ",
+        "██      ",
+        "██      ",
+        " ██  ██ ",
+        "  ████  ",
+    ),
+    "D": (
+        "██████  ",
+        "██    ██",
+        "██    ██",
+        "██    ██",
+        "██    ██",
+        "██████  ",
+    ),
 }
 
 
@@ -136,8 +152,7 @@ def boot_panel(width: int, height: int, t: float, *, tide: float = 0.0) -> Panel
                 grid[y][x] = (" ", _PLATE)
                 continue
             ch = _UNITS[(x + int(t * 16)) % len(_UNITS)]
-            style = UI_CYAN if abs(dy) == 1 else UI_PRIMARY
-            grid[y][x] = (ch, style)
+            grid[y][x] = (ch, _wake_style(ch, abs(dy), x))
     _write_wordmark(grid, inner_w, inner_h, mid, cut, t)
     _blit_boat(grid, inner_w, inner_h, mid, amp, head_x)
     return Panel(
@@ -168,7 +183,7 @@ def _sea(width: int, height: int, t: float) -> list[list[tuple[str, str]]]:
         row: list[tuple[str, str]] = []
         for x in range(width):
             ch = _UNITS[(x + y + phase) % len(_UNITS)]
-            row.append((ch, f"dim {UI_DEEP}"))
+            row.append((ch, _sea_style(ch, x, y, phase)))
         rows.append(row)
     return rows
 
@@ -182,6 +197,32 @@ def _wordmark() -> tuple[str, ...]:
     for r in range(rows):
         out.append("  ".join(g[r] for g in glyphs))
     return tuple(out)
+
+
+def _whitecap_wave(x: int, y: int, phase: int) -> bool:
+    """Pick a few swells; their crests get foam. Most waves stay blue."""
+    wave = (x + y + phase) // len(_UNITS)
+    return (wave * 13 + y * 7 + phase) % 17 == 5
+
+
+def _sea_style(ch: str, x: int, y: int, phase: int) -> str:
+    if ch in "▇▆" and _whitecap_wave(x, y, phase):
+        return f"bold {UI_WHITE}"
+    if ch in "▇▆":
+        return UI_CYAN
+    if ch in "▅▄":
+        return UI_PRIMARY
+    if ch in "▃▂":
+        return UI_DEEP
+    return f"dim {UI_DEEP}"
+
+
+def _wake_style(ch: str, dist: int, x: int) -> str:
+    if ch in "▇▆" and _whitecap_wave(x, dist, 4):
+        return f"bold {UI_WHITE}"
+    if dist == 1:
+        return UI_CYAN
+    return UI_PRIMARY
 
 
 def _write_wordmark(
@@ -235,11 +276,14 @@ def _write_wordmark(
     if t < 0.5:
         return
     tag = TAGLINE
+    tag_w = cell_len(tag)
     tag_y = min(height - 1, cap_y + 1)
-    tag_x = max(0, (width - cell_len(tag)) // 2)
-    if cut <= tag_x:
+    tag_x = max(0, (width - tag_w) // 2)
+    if cut < tag_x + tag_w:
+        tag_x = max(1, cut - tag_w - 1)
+    if cut < tag_x + tag_w:
         return
-    for x in range(max(0, tag_x - 1), min(width, tag_x + cell_len(tag) + 1)):
+    for x in range(max(0, tag_x - 1), min(width, tag_x + tag_w + 1)):
         if x < cut:
             grid[tag_y][x] = (" ", "")
     for i, ch in enumerate(tag):
@@ -319,6 +363,7 @@ class _Reveal:
         while len(cover_lines) < height:
             cover_lines.append([Segment(" " * width)])
         shore = Style.parse(f"bold {UI_FOAM}")
+        bright = Style.parse(f"bold {UI_WHITE}")
         foam = Style.parse(f"bold {UI_CYAN}")
         for y in range(height):
             cut = _waterline(self.t, width, y)
@@ -328,7 +373,7 @@ class _Reveal:
             if 0 < cut < width:
                 n = min(3, width - cut)
                 glyphs = _SHORE[:n]
-                styles = (shore, foam, shore)
+                styles = (shore, bright, foam)
                 edge = [
                     Segment(ch, styles[i % len(styles)])
                     for i, ch in enumerate(glyphs)

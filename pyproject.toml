@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "wavemio"
-version = "2.6.1"
-description = "Wavemio: a from-scratch CLI coding agent for DeepSeek"
+version = "2.12.4"
+description = "WaveCode: a from-scratch CLI coding agent"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -14,6 +14,7 @@ dependencies = [
   "pydantic-settings>=2.2",
   "python-dotenv>=1.0",
   "rich>=13.7",
+  "pygments>=2.18",
 ]
 
 [project.optional-dependencies]
@@ -25,6 +26,7 @@ dev = [
 ]
 
 [project.scripts]
+wavecode = "coding_agent.cli.app:main"
 wavemio = "coding_agent.cli.app:main"
 coding-agent = "coding_agent.cli.app:main"
 

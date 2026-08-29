@@ -10,6 +10,7 @@ from rich.text import Text
 
 from coding_agent.cli.branding import GLYPH_WAVE, PRODUCT_NAME
 from coding_agent.cli.chrome import activity_line, ocean_banner, ocean_panel
+from coding_agent.cli.sidebar import get_sidebar
 from coding_agent.cli.sprites.bank import get_bank
 from coding_agent.cli.theme import UI_CYAN, UI_ERR, UI_ICE, UI_PRIMARY
 from coding_agent.cli.view import ChatView
@@ -116,6 +117,7 @@ class TuiEventSink:
     def __init__(self, view: ChatView) -> None:
         self.view = view
         self._current_activity = ""
+        self._current_call: ToolCallRequest | None = None
 
     def on_event(self, event: AgentEvent) -> None:
         handler = getattr(self, f"_on_{type(event).__name__}", None)
@@ -125,12 +127,14 @@ class TuiEventSink:
     def _on_UserMessageAccepted(self, event: UserMessageAccepted) -> None:
         self.view.append("user", event.text)
         get_bank().set_pose("think")
+        get_sidebar().begin_turn()
 
     def _on_LLMRequestStarted(self, event: LLMRequestStarted) -> None:
         self.view.set_status(f"{GLYPH_WAVE} {PRODUCT_NAME} 思考中…")
 
     def _on_ToolCallScheduled(self, event: ToolCallScheduled) -> None:
         get_bank().set_pose("tool")
+        self._current_call = event.call
         activity = describe_tool(event.call)
         self._current_activity = activity
         self.view.set_status(f"{GLYPH_WAVE} {PRODUCT_NAME} {activity}…")
@@ -139,12 +143,26 @@ class TuiEventSink:
         result = event.result
         if not result.ok:
             get_bank().set_pose("err")
+        else:
+            self._note_workspace_change(result.name)
         label = self._current_activity or result.name
         text = label
         if not result.ok:
             summary = (result.content.splitlines()[0] if result.content else "failed")[:80]
             text = f"{label}\n{summary}"
         self.view.append("tool", text, ok=result.ok)
+
+    def _note_workspace_change(self, name: str) -> None:
+        code = {"write_file": "A", "edit_file": "M"}.get(name)
+        if code is None:
+            if name == "bash":
+                get_sidebar().invalidate()
+            return
+        call = self._current_call
+        path = _tool_target(name, call.arguments_json) if call is not None else ""
+        if path:
+            get_sidebar().note(path, code)
+        get_sidebar().invalidate()
 
     def _on_ContextCompacted(self, event: ContextCompacted) -> None:
         self.view.append("note", "上下文压缩")

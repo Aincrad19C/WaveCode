@@ -9,7 +9,7 @@ from coding_agent.llm.types import TokenUsage
 
 
 def system() -> ChatMessage:
-    return ChatMessage(role=Role.SYSTEM, content="You are Wavemio.")
+    return ChatMessage(role=Role.SYSTEM, content="You are WaveCode.")
 
 
 def tool_block(call_id: str, big: bool = False) -> list[ChatMessage]:

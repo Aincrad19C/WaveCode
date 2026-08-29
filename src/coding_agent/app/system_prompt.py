@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-_TEMPLATE = """You are Wavemio, a local coding agent. You work inside this workspace:
+_TEMPLATE = """You are WaveCode, a local coding agent. You work inside this workspace:
 {workspace_root}
 
 You MUST solve programming tasks by calling tools. Available tools:

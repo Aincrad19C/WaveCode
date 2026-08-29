@@ -1,19 +1,19 @@
-# Wavemio
+# WaveCode
 
-**Wavemio** 是一个用 Python 从零手写的命令行编程智能体（coding agent）：把自然语言任务交给它，
-它通过 DeepSeek Chat Completions 的**原生 tool calling** 在本地读写文件、搜索、执行命令，循环
-推进直到任务完成。**自研 Agent 循环，不使用任何 agent 框架 / SDK**（无 LangChain / AutoGen /
+**WaveCode** 是一个用 Python 从零手写的命令行编程智能体（coding agent）：把自然语言任务交给它，
+它通过 Chat Completions 的**原生 tool calling** 在本地读写文件、搜索、执行命令，循环
+推进直到任务完成。界面不绑定单一厂商；模型由配置选择。**自研 Agent 循环，不使用任何 agent 框架 / SDK**（无 LangChain / AutoGen /
 OpenAI Agents SDK 等，也不依赖服务端 Code Interpreter / Files API）；对话历史与上下文管理、
 工具定义与本地执行、模型输出解析、循环终止条件、错误处理全部为本仓库自己的代码。
 
-CLI 为全屏独占聊天界面（备用屏幕，像 `top`）：启动动画结束后进入左轨 32×32 立绘（可播 GIF）、工作区 HUD、气泡对话与底部输入。管道与 `wavemio run` 仍是滚动文本。
+CLI 为全屏独占聊天界面（备用屏幕，像 `top`）：启动动画结束后进入左轨 32×32 立绘（可播 GIF）、其下为紧邻的工作区文件树（默认折叠）与 Changes 框、右侧工作区 HUD。主区域是 Cursor 式标签页（对话 / 文本），底部为输入。Tab 在输入、文件、Changes 之间循环（Enter 展开目录或打开文件；Changes 用红绿对照改动）。管道与 `wavecode run` 仍是滚动文本。
 
 设计文档见 [docs/](./docs/README.md)（00–12 + CHANGELOG）。
 
 ## 环境要求
 
 - Python 3.11+
-- 依赖仅：`httpx`、`pydantic`、`pydantic-settings`、`python-dotenv`、`rich`
+- 依赖仅：`httpx`、`pydantic`、`pydantic-settings`、`python-dotenv`、`rich`、`pygments`
 
 ## 安装
 
@@ -34,13 +34,15 @@ export DEEPSEEK_API_KEY=...      # 或：复制 .env.example 为 .env 再填写
 ## 使用
 
 ```bash
-wavemio                          # 全屏聊天界面（默认；退出后终端复原）
-wavemio run "在当前目录写一个 hello.py 并运行它"
-wavemio run -                    # 从 stdin 读任务
-wavemio --workdir /path --max-turns 10 --think run "..."
+wavecode                         # 全屏聊天界面（默认；退出后终端复原）
+wavecode run "在当前目录写一个 hello.py 并运行它"
+wavecode run -                   # 从 stdin 读任务
+wavecode --workdir /path --max-turns 10 --think run "..."
 ```
 
-REPL 斜杠命令：`/help` `/reset` `/tools` `/status` `/think on|off` `/mascot` `/quit`。Enter 发送，行末 `\` 续行。
+`wavemio` 仍是同一入口的别名。
+
+REPL 斜杠命令：`/help` `/reset` `/tools` `/status` `/think on|off` `/mascot` `/vim` `/quit`。Enter 发送，行末 `\` 续行。Tab 在输入、文件、Changes 之间循环；F1 / F2 / Ctrl+T 切换对话与文本标签。
 会话日志写入 `<workdir>/.wavemio/logs/<timestamp>.jsonl`（已 gitignore）。
 
 ## 开发与测试

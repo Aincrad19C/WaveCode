@@ -1,4 +1,4 @@
-"""Ocean palette for the Wavemio CLI (blue sea + foam)."""
+"""Ocean palette for the WaveCode CLI (blue sea + foam)."""
 
 from __future__ import annotations
 
