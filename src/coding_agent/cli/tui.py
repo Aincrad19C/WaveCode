@@ -282,6 +282,13 @@ class _MascotRail:
         )
 
 
+def file_change_heights(total: int) -> tuple[int, int]:
+    """Split remaining rail height 1:1 (files, changes). Odd leftover goes to files."""
+    total = max(2, total)
+    changes_h = total // 2
+    return total - changes_h, changes_h
+
+
 class _FileChangeRail:
     """File tree and Changes as two flush panels, split 1:1."""
 
@@ -295,9 +302,7 @@ class _FileChangeRail:
     def __rich_console__(self, console: Console, options) -> Iterator[RenderableType]:
         pane = get_sidebar()
         pane.set_root(self.root)
-        total = max(2, options.height or 12)
-        changes_h = total // 2
-        files_h = total - changes_h
+        files_h, changes_h = file_change_heights(options.height or 12)
         inner = Layout()
         inner.split_column(
             Layout(name="files", size=files_h),

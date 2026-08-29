@@ -485,14 +485,18 @@ def test_tui_frame_fills_terminal_like_top() -> None:
         assert banned not in out
 
 
-def test_file_change_rail_splits_one_to_one() -> None:
+def test_file_change_rail_splits_one_to_one(tmp_path) -> None:
     from io import StringIO
 
     from rich.console import Console
     from rich.layout import Layout
 
     from coding_agent.cli.sidebar import reset_sidebar
-    from coding_agent.cli.tui import _FileChangeRail
+    from coding_agent.cli.tui import _FileChangeRail, file_change_heights
+
+    assert file_change_heights(20) == (10, 10)
+    assert file_change_heights(21) == (11, 10)
+    assert file_change_heights(2) == (1, 1)
 
     reset_sidebar()
     height = 20
@@ -505,17 +509,12 @@ def test_file_change_rail_splits_one_to_one() -> None:
         record=True,
     )
     frame = Layout(size=height)
-    frame.update(_FileChangeRail("."))
+    frame.update(_FileChangeRail(str(tmp_path)))
     console.print(frame)
     lines = console.export_text().splitlines()
-    while lines and not lines[-1].strip():
-        lines.pop()
     files_at = next(i for i, line in enumerate(lines) if "文件" in line)
     changes_at = next(i for i, line in enumerate(lines) if "Changes" in line)
-    files_h = changes_at - files_at
-    changes_h = len(lines) - changes_at
-    assert files_h == changes_h
-    assert files_h == height // 2
+    assert changes_at - files_at == height // 2
 
 
 def test_tui_file_pane_lists_workspace_below_portrait(tmp_path) -> None:
