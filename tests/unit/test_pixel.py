@@ -70,7 +70,7 @@ def test_default_pack_maps_gif_poses() -> None:
 def test_builtin_pack_gif_is_package_data() -> None:
     from importlib.resources import files
 
-    idle = files("coding_agent.cli.sprites.packs").joinpath("default", "idle.gif")
+    idle = files("coding_agent.cli.sprites.packs").joinpath("default").joinpath("idle.gif")
     assert idle.is_file()
 
 
