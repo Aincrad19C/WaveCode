@@ -43,9 +43,10 @@ from coding_agent.cli.chrome import (
     workspace_hud,
 )
 from coding_agent.cli.commands import SlashOutcome, dispatch_slash
-from coding_agent.cli.editor import KeyAction, LineEditor, NavKeys
+from coding_agent.cli.editor import KeyAction, LineEditor, NavKeys, PickerKeys
 from coding_agent.cli.handoff import file_open_argv
 from coding_agent.cli.hub import TAB_LABELS, TABS, get_hub
+from coding_agent.cli.picker import mascot_picker, model_picker, render_picker, skill_picker
 from coding_agent.cli.sidebar import get_sidebar
 from coding_agent.cli.sprites.bank import get_bank
 from coding_agent.cli.sprites.pack import SPRITE_SIZE, ensure_user_packs
@@ -60,6 +61,9 @@ from coding_agent.cli.theme import (
 )
 from coding_agent.cli.view import ChatItem, ChatView, ViewSnapshot
 from coding_agent.config.settings import Settings
+from coding_agent.llm.catalog import apply_model, discover_models, supports_thinking
+from coding_agent.skills.bank import get_skills
+from coding_agent.skills.pack import ensure_user_skills
 
 _SPIN = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 _MASCOT_WIDTH = 34
@@ -146,6 +150,7 @@ class OceanFrame:
                 workdir=str(cwd),
                 model=self.settings.deepseek_model,
                 thinking=self.settings.thinking,
+                show_thinking=supports_thinking(self.settings.deepseek_model),
                 stream=self.settings.stream,
                 turn=state.turn,
                 max_turns=self.settings.max_turns,
@@ -410,6 +415,9 @@ class _ChatPane:
         snap = self.view.snapshot()
         width = options.max_width
         height = options.height or 8
+        if snap.picker is not None:
+            yield render_picker(snap.picker, width, height)
+            return
         inner_h = max(1, height - 2)
         inner_w = max(8, width - 4)
         body = _fit_chat(snap, inner_w, inner_h)
@@ -473,7 +481,9 @@ class _StatusBar:
             left = Text(f" {spin}  {snap.status}", style=UI_ICE)
         else:
             left = Text(f" {GLYPH_WAVE} 就绪", style=UI_ICE)
-        if snap.focus == "files":
+        if snap.picker is not None:
+            right = Text("j/k 移动  ·  空格勾选  ·  Enter 确认  ·  Esc 取消", style="muted")
+        elif snap.focus == "files":
             right = Text(
                 "j/k 滚轮  ·  Enter 展开/打开  ·  d 改动  ·  Tab Changes",
                 style="muted",
@@ -585,6 +595,9 @@ def _input_scroll_hint(offset: int, visible: int, total: int) -> str:
 
 def _input_viewport(snap: ViewSnapshot, inner_width: int) -> tuple[tuple[str, ...], str]:
     hub = get_hub()
+    if snap.picker is not None:
+        title = "勾选 skill" if snap.picker.kind == "skill" else "勾选立绘包"
+        return (f"{GLYPH_WAVE} {title}",), "空格勾选  Enter 确认  Esc 取消"
     if snap.busy:
         return (f"{GLYPH_WAVE} 思考中，Ctrl+C 取消",), ""
     if hub.tab == "text" and snap.focus not in {"files", "changes", "input"}:
@@ -748,9 +761,11 @@ class OceanTui:
         self._fd = 0
         self._term_old: object | None = None
         self._nav = NavKeys()
+        self._pick = PickerKeys()
 
     def run(self) -> int:
-        ensure_user_packs()
+        ensure_user_packs(workdir=self.settings.workdir)
+        ensure_user_skills()
         if self.console.size.width < 40:
             self.console.width = 80
         if self.console.size.height < 12:
@@ -847,6 +862,8 @@ class OceanTui:
             )
 
     def _route_keys(self, data: bytes, editor: LineEditor) -> str | None:
+        if self.view.snapshot().picker is not None:
+            return self._apply_picker(self._pick.feed(data), editor)
         focus = self.view.snapshot().focus
         if focus in {"files", "changes"}:
             return self._apply_nav(self._nav.feed(data), editor)
@@ -886,6 +903,73 @@ class OceanTui:
             self.view.scroll_up(-delta)
         else:
             self.view.scroll_down(delta)
+
+    def _apply_picker(self, actions: list[KeyAction], editor: LineEditor) -> str | None:
+        for action in actions:
+            if action.kind == "interrupt":
+                self.view.set_picker(None)
+                continue
+            if action.kind == "wheel":
+                self.view.move_picker(int(action.text or "0"))
+                continue
+            if action.kind in {"main_tab", "cycle_tab"}:
+                continue
+            if action.kind == "move":
+                self.view.move_picker(int(action.text or "0"))
+            elif action.kind == "toggle":
+                self.view.toggle_picker()
+            elif action.kind == "confirm":
+                self._confirm_picker()
+            elif action.kind == "cancel":
+                self.view.set_picker(None)
+        editor.clear()
+        return None
+
+    def _open_picker(self, title: str) -> None:
+        get_hub().set_tab("chat")
+        self.view.set_focus("input")
+        if title == "mascot":
+            bank = get_bank()
+            bank.set_workdir(self.settings.workdir)
+            self.view.set_picker(mascot_picker(bank))
+            return
+        if title == "model":
+            llm = getattr(getattr(self.session, "loop", None), "llm", None)
+            models = discover_models(llm, current=self.settings.deepseek_model)
+            self.view.set_picker(model_picker(models, current=self.settings.deepseek_model))
+            return
+        skills = get_skills()
+        skills.set_workdir(self.settings.workdir)
+        self.view.set_picker(skill_picker(skills))
+
+    def _confirm_picker(self) -> None:
+        picker = self.view.snapshot().picker
+        if picker is None:
+            return
+        self.view.set_picker(None)
+        if picker.kind == "mascot":
+            names = picker.checked_names()
+            if not names:
+                return
+            bank = get_bank()
+            bank.set_workdir(self.settings.workdir)
+            kind, body = bank.select(names[0])
+            self.view.append("note" if kind != "warn" else "error", body)
+            return
+        if picker.kind == "model":
+            names = picker.checked_names()
+            if not names:
+                self.view.append("error", "请输入 /model 打开勾选列表。")
+                return
+            kind, body = apply_model(self.session, self.settings, names[0])
+            self.view.append("note" if kind != "warn" else "error", body)
+            return
+        skills = get_skills()
+        skills.set_workdir(self.settings.workdir)
+        kind, body = skills.replace_active(list(picker.checked_names()))
+        if kind == "note":
+            self.session.rebuild_system()
+        self.view.append("note" if kind != "warn" else "error", body)
 
     def _apply(self, actions: list[KeyAction], editor: LineEditor) -> str | None:
         busy = self.view.snapshot().busy
@@ -968,6 +1052,9 @@ class OceanTui:
 
     def _on_interrupt(self, editor: LineEditor) -> bool:
         """True when the TUI should exit."""
+        if self.view.snapshot().picker is not None:
+            self.view.set_picker(None)
+            return False
         if self.view.snapshot().busy:
             self.session.loop.state.cancel()
             self.view.append("note", "已取消。")
@@ -1004,6 +1091,9 @@ class OceanTui:
             return True
         if outcome.kind == "vim":
             self._open_vim(outcome.body or None)
+            return False
+        if outcome.kind == "pick":
+            self._open_picker(outcome.title)
             return False
         if command.split()[0] == "/reset":
             self.view.clear()

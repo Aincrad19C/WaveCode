@@ -143,3 +143,14 @@ def test_sidebar_session_notes_clear_on_new_turn(tmp_path) -> None:
     assert pane.changes() == ()
     names = {item.name for item in pane.tree()}
     assert "keep.py" in names
+
+
+def test_sidebar_forget_drops_session_notes(tmp_path) -> None:
+    pane = reset_sidebar()
+    pane.set_root(tmp_path)
+    pane.begin_turn()
+    pane.note("a.py", "A")
+    pane.note("b.py", "M")
+    pane.forget(["a.py"])
+    left = {item.path for item in pane.changes()}
+    assert left == {"b.py"}

@@ -39,14 +39,17 @@ class BashTool(Tool):
     name = "bash"
     description = (
         "Run a shell command. The working directory starts at the workspace root "
-        "and persists across calls (cd is remembered). "
-        "Returns exit_code, stdout and stderr."
+        "and persists across calls, including directory changes. "
+        "Returns exit_code, stdout, and stderr."
     )
     parameters = {
         "type": "object",
         "properties": {
             "command": {"type": "string", "description": "Shell command to run."},
-            "timeout_s": {"type": "number", "description": "Timeout in seconds (max 120)."},
+            "timeout_s": {
+                "type": "number",
+                "description": "Timeout in seconds. Maximum 120.",
+            },
         },
         "required": ["command"],
     }

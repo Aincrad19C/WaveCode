@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -65,16 +66,48 @@ def discover_packs(
     return found
 
 
-def ensure_user_packs(*, home: Path | None = None) -> Path:
-    """Create ``~/.wavecode/mascots`` and drop a HOWTO so users can add packs."""
+def ensure_user_packs(*, home: Path | None = None, workdir: Path | None = None) -> Path:
+    """Create mascot drop dirs, write HOWTO, and copy the bundled default pack.
+
+    Home: ``~/.wavecode/mascots``. Workspace: ``<workdir>/.wavecode/mascots``.
+    Existing files are not overwritten.
+    """
     dest = (Path(home) / PRODUCT_DIRNAME / MASCOTS) if home is not None else user_mascot_dir()
+    _prepare_mascot_dir(dest)
+    if workdir is not None:
+        ws = workspace_mascot_dir(Path(workdir))
+        if ws is not None:
+            _prepare_mascot_dir(ws)
+    return dest
+
+
+def _prepare_mascot_dir(dest: Path) -> None:
     dest.mkdir(parents=True, exist_ok=True)
     readme = dest / "README.txt"
     if not readme.is_file():
         bundled = BUILTIN_PACKS / "README.txt"
         if bundled.is_file():
             readme.write_text(bundled.read_text(encoding="utf-8"), encoding="utf-8")
-    return dest
+    _copy_default_pack(dest)
+
+
+def _copy_default_pack(dest: Path) -> None:
+    src = BUILTIN_PACKS / "default"
+    if not src.is_dir():
+        return
+    target = dest / "default"
+    try:
+        if src.resolve() == target.resolve():
+            return
+    except OSError:
+        return
+    target.mkdir(parents=True, exist_ok=True)
+    for path in src.iterdir():
+        if not path.is_file() or path.name.startswith("."):
+            continue
+        out = target / path.name
+        if not out.is_file():
+            shutil.copy2(path, out)
 
 
 def parse_palette(text: str) -> dict[str, str]:
@@ -159,7 +192,7 @@ def pack_origin(path: Path) -> str:
     resolved = path.resolve()
     try:
         resolved.relative_to(BUILTIN_PACKS.resolve())
-        return "内置"
+        return "发行"
     except ValueError:
         pass
     for home_root in (user_mascot_dir(), legacy_user_mascot_dir()):

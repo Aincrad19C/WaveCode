@@ -8,19 +8,23 @@
 - 失败返回字符串错误，不抛到 CLI。
 - 输出超长由 `Tool.run` 按 `settings.tool_output_max_chars` 截断（与上下文策略双保险）。
 
+## 1.1 `/undo`
+
+`write_file` / `edit_file` 在改盘前调用 `Workspace.remember`。每个用户任务（`AgentLoop.run`）开始时 `mark_new_task`：本任务里**第一次**改文件会丢掉上一窗快照。`/undo` 调用 `restore_task_files`：改过的文件回到快照，本任务新建的文件删除。不还原 `bash` 的副作用。对话历史不动。Changes 栏对应条目清掉。
+
 ## 2. 通用 JSON Schema 约定
 
 顶层必须是 `type: object`。未列进 `properties` 的参数忽略（`validate_args` 丢掉 extras，不要 500）。缺 `required` 字段 → `SchemaValidationError` → 失败 ToolResult。
 
 字符串路径统一字段名：`path`。目录列表用 `path`，默认 `"."`。
 
-## 3. 内置工具规格
+## 3. 工具规格
 
 实现放在 `tools/builtin/`。`tools/builtin/__init__.py` 提供 `all_builtin_tools() -> list[Tool]`。
 
 ### 3.1 `read_file`
 
-描述：Read a UTF-8 text file from the workspace. Use offset/limit for large files.
+描述：Read a UTF-8 text file from the workspace. Paths are relative to the workspace root. For large files set offset to the 1-based starting line and limit to the number of lines. Default limit is 400.
 
 参数：
 
@@ -39,7 +43,7 @@
 
 ### 3.2 `write_file`
 
-描述：Create or overwrite a UTF-8 file. Always overwrite. Parent dirs are created.
+描述：Create or overwrite a UTF-8 file at a workspace-relative path. An existing file is replaced in full. Missing parent directories are created.
 
 参数：`path` (req), `content` (req string)
 
@@ -47,7 +51,7 @@
 
 ### 3.3 `edit_file`
 
-描述：Replace **exactly one** occurrence of `old_text` with `new_text` in a file. `old_text` must uniquely identify the span.
+描述：Replace exactly one occurrence of `old_text` with `new_text` in a file. Matching is literal, not a regular expression. `old_text` must occur once; zero or multiple matches fail.
 
 参数：`path`, `old_text`, `new_text` 全必填。
 
@@ -164,5 +168,6 @@ r"(?i)(key|token|secret|password|passwd|authorization)$"
 ## 7. 单测
 
 - `Workspace.resolve("../etc/passwd")` 抛 `ToolPathError`。
+- `/undo`：新建文件删除、已有文件回到改前内容；无快照则 warn。
 - `edit_file` 0/1/2 次匹配。
 - `bash` 环境中无 `DEEPSEEK_API_KEY`（测试里 monkeypatch 进去再断言子进程 env）。可用 `command='python -c "import os;print(os.environ.get(\'DEEPSEEK_API_KEY\'))"'` 期望打印 `None`。

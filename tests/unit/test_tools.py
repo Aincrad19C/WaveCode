@@ -44,6 +44,19 @@ def test_registry_order_and_duplicates() -> None:
         registry.register(ReadFileTool())
 
 
+def test_tool_schema_copy_is_professional() -> None:
+    banned = ("内置", "改的不管", "(", ")")
+    for tool in all_builtin_tools():
+        schema = tool.schema()["function"]
+        blob = schema["description"]
+        for prop in schema["parameters"]["properties"].values():
+            blob += " " + prop["description"]
+        for phrase in banned:
+            assert phrase not in blob, f"{tool.name}: {blob!r}"
+        assert blob.strip()
+        assert blob[0].isupper()
+
+
 # -- read_file ------------------------------------------------------------------
 
 def test_read_file_with_line_numbers(ctx: ToolContext, tmp_path: Path) -> None:
@@ -108,6 +121,18 @@ def test_edit_file_multiple_matches(ctx: ToolContext, tmp_path: Path) -> None:
     (tmp_path / "m.py").write_text("x\nx\n")
     result = EditFileTool().run(call("edit_file", path="m.py", old_text="x", new_text="y"), ctx)
     assert not result.ok and "matched 2 times" in result.content
+
+
+def test_write_and_edit_are_undone_together(ctx: ToolContext, tmp_path: Path) -> None:
+    (tmp_path / "old.py").write_text("alpha\n", encoding="utf-8")
+    ctx.workspace.mark_new_task()
+    assert WriteFileTool().run(call("write_file", path="new.py", content="beta\n"), ctx).ok
+    assert EditFileTool().run(
+        call("edit_file", path="old.py", old_text="alpha", new_text="gamma"), ctx
+    ).ok
+    assert ctx.workspace.restore_task_files() == ["new.py", "old.py"]
+    assert not (tmp_path / "new.py").exists()
+    assert (tmp_path / "old.py").read_text(encoding="utf-8") == "alpha\n"
 
 
 # -- list_dir ---------------------------------------------------------------------

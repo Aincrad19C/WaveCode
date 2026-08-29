@@ -176,10 +176,14 @@ wavemio run -           # 从 stdin 读任务
 |------|------|
 | `/help` | 列出命令与工具名 |
 | `/reset` | 清空对话 |
+| `/undo` | 还原本任务 `write_file` / `edit_file`（见 05） |
 | `/tools` | 列出 schema 名与一句话 |
-| `/status` | 工作区、模型、turn、token 估计 |
+| `/status` | 工作区、模型、turn、token 估计；无 thinking 的模型不写 thinking 行 |
 | `/quit` `/exit` `/q` | 告别（短 `idle`/挥手）后退出 |
-| `/think on\|off` | 切换 thinking |
+| `/model` | 打开模型勾选列表（只显示 id；不含视觉模型；带参数则 warn） |
+| `/think on\|off` | 切换 thinking；当前模型不支持时 warn，且不出现在 `/help` |
+| `/mascot` | 打开立绘包勾选列表。新包放到 `~/.wavecode/mascots/<包名>/` 或工作区 `.wavecode/mascots/<包名>/`；启动时复制 `default` |
+| `/skill` | 打开 skill 勾选列表。新包放到 `~/.wavecode/skills/<名>/` |
 
 未知 `/xxx`：warn，不送进模型。
 

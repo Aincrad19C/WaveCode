@@ -5,6 +5,8 @@ from __future__ import annotations
 import threading
 from dataclasses import dataclass
 
+from coding_agent.cli.picker import PickState
+
 
 @dataclass(frozen=True, slots=True)
 class ChatItem:
@@ -23,6 +25,7 @@ class ViewSnapshot:
     scroll: int
     placeholder: str
     focus: str
+    picker: PickState | None
 
 
 class ChatView:
@@ -37,6 +40,7 @@ class ChatView:
         self._scroll = 0
         self._placeholder = "在下方输入任务。Enter 发送，Ctrl+C 离开，/help 查看命令。"
         self._focus = "input"
+        self._picker: PickState | None = None
 
     def append(self, kind: str, text: str, *, ok: bool = True, title: str = "") -> None:
         with self._lock:
@@ -73,6 +77,20 @@ class ChatView:
         with self._lock:
             self._scroll = 0
 
+    def set_picker(self, picker: PickState | None) -> None:
+        with self._lock:
+            self._picker = picker
+
+    def move_picker(self, delta: int) -> None:
+        with self._lock:
+            if self._picker is not None:
+                self._picker = self._picker.moved(delta)
+
+    def toggle_picker(self) -> None:
+        with self._lock:
+            if self._picker is not None:
+                self._picker = self._picker.toggled()
+
     def set_focus(self, name: str) -> None:
         with self._lock:
             self._focus = name if name in {"input", "files", "changes", "text"} else "input"
@@ -87,4 +105,5 @@ class ChatView:
                 scroll=self._scroll,
                 placeholder=self._placeholder,
                 focus=self._focus,
+                picker=self._picker,
             )

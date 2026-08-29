@@ -28,6 +28,7 @@ from coding_agent.errors import (
     LLMTimeoutError,
     LLMUnavailableError,
 )
+from coding_agent.llm.catalog import supports_thinking
 from coding_agent.llm.client import LLMClient
 from coding_agent.llm.retry import RetryPolicy
 from coding_agent.llm.stream import StreamAssembler, parse_usage
@@ -54,10 +55,37 @@ class DeepSeekClient(LLMClient):
         http: httpx.Client,
     ) -> None:
         self._api_key = api_key
-        self._url = base_url.rstrip("/") + "/chat/completions"
+        self._base_url = base_url.rstrip("/")
+        self._url = self._base_url + "/chat/completions"
         self._model = model
         self._retry = retry
         self._http = http
+
+    def set_model(self, model: str) -> None:
+        self._model = model
+
+    def list_model_ids(self) -> list[str]:
+        """GET /models. Unit tests inject a mocked httpx client; never called offline."""
+        url = self._base_url + "/models"
+        try:
+            response = self._http.get(url, headers=self._headers())
+        except httpx.TimeoutException as exc:
+            raise LLMTimeoutError(_scrub(str(exc))) from exc
+        except httpx.HTTPError as exc:
+            raise LLMUnavailableError(_scrub(str(exc))) from exc
+        self._raise_for_status(response)
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise LLMBadResponseError("models response is not JSON") from exc
+        rows = payload.get("data") if isinstance(payload, dict) else None
+        if not isinstance(rows, list):
+            raise LLMBadResponseError("models response missing data")
+        ids: list[str] = []
+        for item in rows:
+            if isinstance(item, dict) and item.get("id"):
+                ids.append(str(item["id"]))
+        return ids
 
     # -- public API ---------------------------------------------------------
 
@@ -79,19 +107,23 @@ class DeepSeekClient(LLMClient):
         }
 
     def _to_body(self, request: ModelRequest, *, stream: bool) -> dict[str, Any]:
+        model = request.model or self._model
         body: dict[str, Any] = {
-            "model": request.model or self._model,
+            "model": model,
             "messages": self._to_api_messages(request.messages),
             "temperature": request.temperature,
             "max_tokens": request.max_tokens,
             "stream": stream,
-            "thinking": {"type": "enabled" if request.thinking_enabled else "disabled"},
         }
         if request.tools:
             body["tools"] = list(request.tools)
             body["tool_choice"] = request.tool_choice
-        if request.thinking_enabled:
-            body["reasoning_effort"] = request.reasoning_effort
+        if supports_thinking(model):
+            body["thinking"] = {
+                "type": "enabled" if request.thinking_enabled else "disabled"
+            }
+            if request.thinking_enabled:
+                body["reasoning_effort"] = request.reasoning_effort
         if stream:
             body["stream_options"] = {"include_usage": True}
         return body

@@ -11,12 +11,21 @@ from coding_agent.tools.base import Tool, ToolContext
 
 class ListDirTool(Tool):
     name = "list_dir"
-    description = "List one directory level: 'd name' for dirs, 'f name' for files."
+    description = (
+        "List a single directory. Each line is d followed by a subdirectory name, "
+        "or f followed by a file name. Directories appear first, then files, both sorted by name."
+    )
     parameters = {
         "type": "object",
         "properties": {
-            "path": {"type": "string", "description": "Directory, relative to workspace root."},
-            "max_entries": {"type": "integer", "description": "Cap on entries (default 200)."},
+            "path": {
+                "type": "string",
+                "description": "Directory path relative to the workspace root.",
+            },
+            "max_entries": {
+                "type": "integer",
+                "description": "Maximum entries to return. Default 200.",
+            },
         },
         "required": [],
     }

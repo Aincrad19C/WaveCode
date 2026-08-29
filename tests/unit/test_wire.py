@@ -16,7 +16,9 @@ from coding_agent.errors import (
     LLMUnavailableError,
 )
 from coding_agent.llm.deepseek import DeepSeekClient, parse_chat_completion
+from coding_agent.llm.retry import ExponentialBackoffRetry
 from coding_agent.llm.stream import StreamAssembler
+from coding_agent.llm.types import ModelRequest
 
 
 def test_to_api_messages_snapshot() -> None:
@@ -160,3 +162,46 @@ def test_stream_assembler_content_and_reasoning() -> None:
 def test_stream_assembler_empty_stream_raises() -> None:
     with pytest.raises(LLMBadResponseError):
         StreamAssembler().finish()
+
+
+def _client(http: httpx.Client, model: str = "deepseek-v4-flash") -> DeepSeekClient:
+    return DeepSeekClient(
+        api_key="test-key-not-real",
+        base_url="https://api.deepseek.com",
+        model=model,
+        retry=ExponentialBackoffRetry(max_attempts=1),
+        http=http,
+    )
+
+
+def _request(model: str, *, thinking: bool = True) -> ModelRequest:
+    return ModelRequest(
+        messages=[],
+        tools=[],
+        model=model,
+        temperature=0.2,
+        max_tokens=16,
+        thinking_enabled=thinking,
+    )
+
+
+def test_to_body_omits_thinking_when_model_has_no_toggle() -> None:
+    client = _client(httpx.Client())
+    with_think = client._to_body(_request("deepseek-v4-flash"), stream=False)
+    assert with_think["thinking"] == {"type": "enabled"}
+    without = client._to_body(_request("other-chat"), stream=False)
+    assert "thinking" not in without
+    assert "reasoning_effort" not in without
+
+
+def test_list_model_ids_reads_data_array() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert str(request.url) == "https://api.deepseek.com/models"
+        return httpx.Response(
+            200,
+            json={"data": [{"id": "deepseek-v4-pro"}, {"id": "deepseek-v4-flash"}]},
+            request=request,
+        )
+
+    client = _client(httpx.Client(transport=httpx.MockTransport(handler)))
+    assert client.list_model_ids() == ["deepseek-v4-pro", "deepseek-v4-flash"]

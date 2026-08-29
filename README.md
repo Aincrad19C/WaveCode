@@ -8,7 +8,7 @@ OpenAI Agents SDK 等，也不依赖服务端 Code Interpreter / Files API）；
 
 CLI 为全屏独占聊天界面（备用屏幕，像 `top`）：启动动画结束后进入左轨 32×32 立绘（可播 GIF）、其下为紧邻的工作区文件树（默认折叠）与 Changes 框、右侧工作区 HUD。主区域是 Cursor 式标签页（对话 / 文本），底部为输入。Tab 在输入、文件、Changes 之间循环（Enter 展开目录或打开文件；Changes 用红绿对照改动）。管道与 `wavecode run` 仍是滚动文本。
 
-设计文档见 [docs/](./docs/README.md)（00–12 + CHANGELOG）。
+设计文档见 [docs/](./docs/README.md)（00–13 + CHANGELOG）。
 
 ## 环境要求
 
@@ -34,9 +34,15 @@ pip install dist/wavecode-*.whl
 
 ## 自定义立绘
 
-把一个文件夹放到 **`~/.wavecode/mascots/<包名>/`**，里面至少要有 `idle.gif`（或 `idle.png` / `idle.txt`）。启动全屏或 REPL 时会自动创建该目录并写入说明。工作区也可以用 `<工作区>/.wavecode/mascots/`。仍识别旧的 `.wavemio/mascots`。
+把一个文件夹放到 **`~/.wavecode/mascots/<包名>/`** 或当前工作区 **`<工作区>/.wavecode/mascots/<包名>/`**，里面至少要有 `idle.gif`（或 `idle.png` / `idle.txt`）。启动时会创建这两个目录，并把发行包 `default` 复制进去（已有文件不覆盖）。仍识别旧的 `.wavemio/mascots`。
 
-`/mascot` 列出可用包和投放目录，`/mascot 包名` 切换。
+`/mascot` 在全屏列出可用包并勾选切换；滚动 REPL 打印列表。
+
+## 自定义 Skill
+
+把文件夹放到 **`~/.wavecode/skills/<名>/`**，内含 `SKILL.md`（YAML frontmatter + Markdown 正文）。工作区也可用 `<工作区>/.wavecode/skills/`。启动全屏或 REPL 时会创建用户目录并写入说明。
+
+随包装了 1 个默认 skill：`frontend-design`（仿 Anthropic 官方前端设计 skill：先定视觉方向再写页面）。`/skill` 在全屏列出全部包并勾选装载，最多 8 个；滚动 REPL 打印带 `[✓]` 的列表。用户或工作区同名目录覆盖发行包。目录里只放名称与一句话说明，全文按需装载。不执行 skill 目录里的脚本。详见 [docs/13-skills.md](./docs/13-skills.md)。
 
 ## 配置密钥（不要提交进仓库）
 
@@ -59,7 +65,7 @@ wavecode --workdir /path --max-turns 10 --think run "..."
 
 `wavemio` 仍是同一入口的别名。
 
-REPL 斜杠命令：`/help` `/reset` `/tools` `/status` `/think on|off` `/mascot` `/vim` `/quit`。Enter 发送，行末 `\` 续行。Tab 在输入、文件、Changes 之间循环；F1 / F2 / Ctrl+T 切换对话与文本标签。
+REPL 斜杠命令：`/help` `/reset` `/undo` `/tools` `/status` `/model` `/think on|off` `/mascot` `/skill` `/vim` `/quit`。Enter 发送，行末 `\` 续行。Tab 在输入、文件、Changes 之间循环；F1 / F2 / Ctrl+T 切换对话与文本标签。当前模型没有 thinking 时不显示 `/think`。
 会话日志写入 `<workdir>/.wavecode/logs/<timestamp>.jsonl`（已 gitignore）。
 
 ## 开发与测试
@@ -76,5 +82,5 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest    # 全部单测离线运行（禁网�
 - `bash` 工具**不是完整沙箱**：文件工具被限制在工作区内（路径逃逸会被拒绝），但 shell 命令本身
   仍可 `cd` 出去；仅做了极小的危险命令黑名单，请在可信目录下使用。
 - 子进程环境会剥离 `DEEPSEEK_API_KEY` 及形如 `*_KEY / *_TOKEN / *SECRET*` 的变量，防止密钥泄漏进模型上下文。
-- 上下文超预算时做本地截断压缩（不调用模型做摘要）；超长工具输出保留头 70% / 尾 20%。
-- V1 无 Web UI、无多 Agent、无 MCP、无跨会话记忆。
+- 上下文超预算时先截断过长 tool/assistant 文本（头 70% / 尾 20%），再丢掉旧轮次；默认用一次**无工具** LLM 把丢掉的内容收成备忘（`WAVEMIO_SUMMARIZE_CONTEXT=false` 则只保留用户原句摘录）。摘要失败不影响主任务。规格见 [docs/04-context-management.md](./docs/04-context-management.md) §4.2。
+- Skill 是用户 Markdown，会进 system prompt；只装自己信任的包。无 Web UI、无多 Agent、无 MCP、无跨会话向量记忆。

@@ -51,6 +51,7 @@ class WorkspaceChrome:
     workdir: str = "."
     model: str = ""
     thinking: bool = False
+    show_thinking: bool = True
     stream: bool = True
     turn: int = 0
     max_turns: int = 30
@@ -152,7 +153,6 @@ def workspace_hud(
     path = ellipsize_left(short_home_path(chrome.workdir), max(8, min(28, width - 16)))
     state = "思考中" if busy else "已就绪"
     state_style = UI_WARN if busy else UI_CYAN
-    think = "on" if chrome.thinking else "off"
     stream = "on" if chrome.stream else "off"
     git = chrome.git_branch or "—"
 
@@ -172,9 +172,13 @@ def workspace_hud(
     mid.append(git, style=UI_CYAN if chrome.git_branch else "muted")
 
     bottom = Text()
-    bottom.append("thinking ", style=UI_ICE)
-    bottom.append(think, style=UI_CYAN if chrome.thinking else "muted")
-    bottom.append("  流式 ", style=UI_ICE)
+    if chrome.show_thinking:
+        think = "on" if chrome.thinking else "off"
+        bottom.append("thinking ", style=UI_ICE)
+        bottom.append(think, style=UI_CYAN if chrome.thinking else "muted")
+        bottom.append("  流式 ", style=UI_ICE)
+    else:
+        bottom.append("流式 ", style=UI_ICE)
     bottom.append(stream, style=UI_ICE)
     bottom.append("  轮次 ", style=UI_ICE)
     bottom.append(f"{chrome.turn}/{chrome.max_turns}  ", style=UI_FOAM)

@@ -17,6 +17,8 @@ class Workspace:
     def __init__(self, root: Path) -> None:
         self.root = root.resolve()
         self.cwd = self.root
+        self._undo: dict[str, bytes | None] = {}
+        self._undo_new_task = False
 
     def set_cwd(self, path: Path | str) -> None:
         """Remember bash's working directory. May leave ``root`` (bash is not sandboxed)."""
@@ -42,3 +44,41 @@ class Workspace:
 
     def relpath(self, path: Path) -> str:
         return str(path.resolve().relative_to(self.root))
+
+    def mark_new_task(self) -> None:
+        """Next ``remember`` starts a new undo window (docs/05)."""
+        self._undo_new_task = True
+
+    def remember(self, path: Path) -> None:
+        """Snapshot ``path`` once per undo window, before write_file / edit_file."""
+        if self._undo_new_task:
+            self._undo.clear()
+            self._undo_new_task = False
+        rel = self.relpath(path)
+        if rel in self._undo:
+            return
+        if path.is_file():
+            try:
+                self._undo[rel] = path.read_bytes()
+            except OSError:
+                return
+            return
+        self._undo[rel] = None
+
+    def restore_task_files(self) -> list[str]:
+        """Restore write_file / edit_file from the current undo window. Clears it."""
+        restored: list[str] = []
+        for rel, original in list(self._undo.items()):
+            path = self.resolve(rel)
+            try:
+                if original is None:
+                    if path.is_file():
+                        path.unlink()
+                else:
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_bytes(original)
+            except OSError:
+                continue
+            restored.append(rel)
+            del self._undo[rel]
+        return restored

@@ -55,6 +55,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     from coding_agent.app.jsonl_sink import JsonlLogSink
     from coding_agent.cli.renderer import RichEventSink
     from coding_agent.cli.repl import Repl
+    from coding_agent.cli.sprites.pack import ensure_user_packs
     from coding_agent.cli.theme import THEME
     from coding_agent.errors import ConfigError
 
@@ -74,6 +75,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         overrides["max_wallclock_s"] = args.timeout
     if overrides:
         settings = settings.model_copy(update=overrides)
+
+    ensure_user_packs(workdir=settings.workdir)
 
     console = Console(theme=THEME, highlight=False)
     use_tui = args.command != "run" and console.is_terminal and sys.stdin.isatty()

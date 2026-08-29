@@ -359,17 +359,19 @@ def test_tui_sink_hides_reasoning_and_keeps_activity() -> None:
     assert bank.pose == "idle"
     sink.on_event(UserMessageAccepted(text="列出文件"))
     assert bank.pose == "think"
+    sink.on_event(LLMRequestStarted())
+    assert bank.pose == "think"
     sink.on_event(ReasoningDelta(text="secret chain of thought"))
     sink.on_event(ContentDelta(text="partial token"))
     call = ToolCallRequest("1", "list_dir", '{"path": "."}')
     sink.on_event(ToolCallScheduled(call=call))
     assert bank.pose == "tool"
-    sink.on_event(LLMRequestStarted())
-    assert bank.pose == "tool"
     sink.on_event(
         ToolExecutionFinished(result=ToolResult("1", "list_dir", True, "ok", {}))
     )
     assert bank.pose == "tool"
+    sink.on_event(LLMRequestStarted())
+    assert bank.pose == "think"
     sink.on_event(FinalAnswer(text="当前目录是空的。", reason="natural"))
     assert bank.pose == "idle"
     snap = view.snapshot()
@@ -630,6 +632,78 @@ def test_line_editor_page_keys_and_backspace() -> None:
     assert "█" not in editor.display(active=False)
 
 
+def test_picker_keys_toggle_confirm_cancel() -> None:
+    from coding_agent.cli.editor import PickerKeys
+
+    keys = PickerKeys()
+    assert keys.feed(b" ")[0].kind == "toggle"
+    assert keys.feed(b"j")[0].kind == "move"
+    assert keys.feed(b"j")[0].text == "1"
+    assert keys.feed(b"k")[0].text == "-1"
+    assert keys.feed(b"\r")[0].kind == "confirm"
+    assert keys.feed(b"\x1b")[0].kind == "cancel"
+    assert keys.feed(b"q")[0].kind == "cancel"
+
+
+def test_pick_state_checkbox_and_radio() -> None:
+    from coding_agent.cli.picker import PickItem, PickState
+
+    items = tuple(
+        PickItem(name=f"s{i}", detail="d", origin="发行", checked=False) for i in range(9)
+    )
+    state = PickState(kind="skill", title="Skill", hint="", items=items, multi=True, max_checked=8)
+    for _ in range(8):
+        state = state.toggled().moved(1)
+    assert sum(1 for item in state.items if item.checked) == 8
+    blocked = state.toggled()
+    assert blocked.warn
+    assert sum(1 for item in blocked.items if item.checked) == 8
+    radio_items = (
+        PickItem("default", "", "发行", True),
+        PickItem("blob", "", "用户", False),
+    )
+    radio = PickState(kind="mascot", title="立绘包", hint="", items=radio_items, multi=False)
+    radio = radio.moved(1).toggled()
+    assert radio.checked_names() == ("blob",)
+    assert radio.toggled().checked_names() == ("blob",)
+
+
+def test_tui_picker_overlay_lists_builtin_skills() -> None:
+    from io import StringIO
+
+    from rich.console import Console
+
+    from coding_agent.cli.chrome import WorkspaceChrome
+    from coding_agent.cli.picker import skill_picker
+    from coding_agent.cli.tui import render_frame
+    from coding_agent.cli.view import ChatView
+    from coding_agent.skills.bank import reset_skills
+
+    view = ChatView()
+    view.set_picker(skill_picker(reset_skills()))
+    buf = StringIO()
+    console = Console(
+        file=buf,
+        width=80,
+        height=32,
+        force_terminal=True,
+        color_system=None,
+        record=True,
+    )
+    console.print(render_frame(view, chrome=WorkspaceChrome(version="2.16.1"), width=80))
+    out = console.export_text()
+    assert "frontend-design" in out
+    assert "[ ]" in out
+    view.toggle_picker()
+    console.print(render_frame(view, chrome=WorkspaceChrome(version="2.16.1"), width=80))
+    out = console.export_text()
+    assert "[✓]" in out
+    assert "[x]" not in out
+    assert "空格勾选" in out
+    for banned in ("吉祥物", "鲸鱼娘", "鲸鱼酿"):
+        assert banned not in out
+
+
 def test_dispatch_slash_help_and_quit() -> None:
     from coding_agent.cli.commands import dispatch_slash
     from fakes.settings import make_settings
@@ -640,9 +714,19 @@ def test_dispatch_slash_help_and_quit() -> None:
     help_out = dispatch_slash("/help", dummy, settings)  # type: ignore[arg-type]
     assert help_out.kind == "help"
     assert "/reset" in help_out.body
+    assert "/model" in help_out.body
+    assert "/think on|off" in help_out.body
     assert "/mascot" in help_out.body
+    assert ".wavecode/mascots" in help_out.body
+    assert "/skill" in help_out.body
+    assert "~/.wavecode/skills" in help_out.body
     assert "/term" not in help_out.body
     assert "/vim" in help_out.body
+    assert "/undo" in help_out.body
+    assert "/mascot 包名" not in help_out.body
+    assert "/skill 名" not in help_out.body
+    assert "/model 名" not in help_out.body
+    assert "改的不管" not in help_out.body
     assert dispatch_slash("/term", dummy, settings).kind == "warn"  # type: ignore[arg-type]
     assert dispatch_slash("/vim src/a.py", dummy, settings).body == "src/a.py"  # type: ignore[arg-type]
     unknown = dispatch_slash("/nope", dummy, settings)  # type: ignore[arg-type]
@@ -761,6 +845,77 @@ def test_dispatch_slash_tools_status_think_reset() -> None:
     assert settings.thinking is True
 
 
+def test_dispatch_slash_model_lists_and_rejects_args() -> None:
+    from types import SimpleNamespace
+
+    from coding_agent.agent.state import LoopState
+    from coding_agent.cli.commands import dispatch_slash
+    from fakes.settings import make_settings
+
+    settings = make_settings()
+    session = SimpleNamespace(loop=SimpleNamespace(state=LoopState(), settings=settings))
+    listed = dispatch_slash("/model", session, settings)
+    assert listed.kind == "pick"
+    assert listed.title == "model"
+    assert "deepseek-v4-flash" in listed.body
+    assert "deepseek-v4-pro" in listed.body
+    assert "deepseek-chat" in listed.body
+    assert "vision" not in listed.body
+    assert "账户" not in listed.body
+    assert "thinking" not in listed.body
+    assert "请输入 /model 打开勾选列表。" in listed.body
+    extra = dispatch_slash("/model deepseek-v4-pro", session, settings)
+    assert extra.kind == "warn"
+    assert extra.body == "请输入 /model 打开勾选列表。"
+    assert settings.deepseek_model == "deepseek-v4-flash"
+
+
+def test_dispatch_slash_hides_think_when_model_has_no_thinking() -> None:
+    from types import SimpleNamespace
+
+    from coding_agent.agent.state import LoopState
+    from coding_agent.cli.commands import dispatch_slash
+    from fakes.settings import make_settings
+
+    settings = make_settings()
+    settings.deepseek_model = "other-chat"
+    settings.thinking = True
+    session = SimpleNamespace(loop=SimpleNamespace(state=LoopState(), settings=settings))
+    help_out = dispatch_slash("/help", session, settings)
+    assert "/model" in help_out.body
+    assert "/think" not in help_out.body
+    status = dispatch_slash("/status", session, settings)
+    assert "other-chat" in status.body
+    assert "thinking=" not in status.body
+    warn = dispatch_slash("/think on", session, settings)
+    assert warn.kind == "warn"
+    assert "不支持 thinking" in warn.body
+    assert settings.thinking is True
+
+
+def test_hud_omits_thinking_switch_when_hidden() -> None:
+    from io import StringIO
+
+    from rich.console import Console
+
+    from coding_agent.cli.chrome import WorkspaceChrome, workspace_hud
+
+    chrome = WorkspaceChrome(
+        workdir=".",
+        model="other-chat",
+        thinking=True,
+        show_thinking=False,
+        version="2.19.0",
+    )
+    buf = StringIO()
+    console = Console(file=buf, width=80, force_terminal=True, color_system=None, record=True)
+    console.print(workspace_hud(chrome, width=80))
+    out = console.export_text()
+    assert "thinking" not in out
+    assert "流式" in out
+    assert "轮次" in out
+
+
 def test_dispatch_slash_mascot_lists_and_switches(tmp_path) -> None:
     from types import SimpleNamespace
 
@@ -774,9 +929,9 @@ def test_dispatch_slash_mascot_lists_and_switches(tmp_path) -> None:
     settings.workdir = tmp_path
     session = SimpleNamespace(loop=SimpleNamespace(state=LoopState(), settings=settings))
     listed = dispatch_slash("/mascot", session, settings)
-    assert listed.kind == "status"
+    assert listed.kind == "pick"
     assert "default" in listed.body
-    assert "投放目录" in listed.body
+    assert "新包放到" in listed.body
     assert ".wavecode/mascots" in listed.body
     assert "动作" not in listed.body
     assert dispatch_slash("/mascot think", session, settings).kind == "warn"
@@ -786,10 +941,72 @@ def test_dispatch_slash_mascot_lists_and_switches(tmp_path) -> None:
     pack.mkdir(parents=True)
     (pack / "palette.txt").write_text("k=#FF0000\n", encoding="utf-8")
     (pack / "idle.txt").write_text(("k" * 32 + "\n") + ("." * 32 + "\n") * 31, encoding="utf-8")
-    switched = dispatch_slash("/mascot blob", session, settings)
-    assert switched.body == "立绘包 = blob"
+    listed_again = dispatch_slash("/mascot blob", session, settings)
+    assert listed_again.kind == "warn"
+    assert get_bank().pack_name == "default"
+    switched = get_bank().select("blob")
+    assert switched == ("note", "立绘包 = blob")
     assert get_bank().pack_name == "blob"
     reset_bank()
+
+
+def test_dispatch_slash_skill_lists(tmp_path) -> None:
+    from types import SimpleNamespace
+
+    from coding_agent.cli.commands import dispatch_slash
+    from coding_agent.skills.bank import get_skills, reset_skills
+    from fakes.settings import make_settings
+
+    reset_skills()
+    settings = make_settings(workdir=tmp_path)
+    session = SimpleNamespace(rebuild_system=lambda: None)
+    listed = dispatch_slash("/skill", session, settings)
+    assert listed.kind == "pick"
+    assert "/skill" in listed.body
+    assert "frontend-design" in listed.body
+    assert "[ ]" in listed.body
+    assert dispatch_slash("/skill frontend-design", session, settings).kind == "warn"
+    assert get_skills().active == ()
+    assert dispatch_slash("/skill nope", session, settings).kind == "warn"
+    reset_skills()
+
+
+def test_dispatch_slash_undo_restores_and_warns_when_empty(tmp_path) -> None:
+    import json
+    from types import SimpleNamespace
+
+    from coding_agent.cli.commands import dispatch_slash
+    from coding_agent.cli.sidebar import reset_sidebar
+    from coding_agent.domain.messages import ToolCallRequest
+    from coding_agent.tools.base import ToolContext
+    from coding_agent.tools.builtin.write_file import WriteFileTool
+    from coding_agent.tools.workspace import Workspace
+    from fakes.settings import make_settings
+
+    reset_sidebar()
+    ws = Workspace(tmp_path)
+    ws.mark_new_task()
+    ctx = ToolContext(workspace=ws, timeout_s=5, output_limit=1000)
+    WriteFileTool().run(
+        ToolCallRequest(
+            id="c1",
+            name="write_file",
+            arguments_json=json.dumps({"path": "made.py", "content": "x\n"}),
+        ),
+        ctx,
+    )
+    settings = make_settings(workdir=tmp_path)
+    session = SimpleNamespace(loop=SimpleNamespace(executor=SimpleNamespace(workspace=ws)))
+    pane = reset_sidebar()
+    pane.set_root(tmp_path)
+    pane.note("made.py", "A")
+    out = dispatch_slash("/undo", session, settings)
+    assert out.kind == "note"
+    assert "made.py" in out.body
+    assert not (tmp_path / "made.py").exists()
+    assert pane.changes() == ()
+    empty = dispatch_slash("/undo", session, settings)
+    assert empty.kind == "warn"
 
 
 def test_tui_slash_help_and_submit_ask() -> None:
@@ -817,6 +1034,97 @@ def test_tui_slash_help_and_submit_ask() -> None:
     tui._worker.join(timeout=1)
     assert asked == ["写一个 hello.py"]
     assert view.snapshot().busy is False
+
+
+def test_tui_skill_and_mascot_open_picker_and_confirm() -> None:
+    from types import SimpleNamespace
+
+    from coding_agent.agent.state import LoopState
+    from coding_agent.cli.editor import LineEditor
+    from coding_agent.cli.sprites.bank import get_bank, reset_bank
+    from coding_agent.cli.tui import OceanTui
+    from coding_agent.cli.view import ChatView
+    from coding_agent.skills.bank import get_skills, reset_skills
+    from fakes.settings import make_settings
+
+    skills = reset_skills()
+    reset_bank()
+    view = ChatView()
+    rebuilt: list[int] = []
+    settings = make_settings()
+    session = SimpleNamespace(
+        loop=SimpleNamespace(state=LoopState(), settings=settings),
+        rebuild_system=lambda: rebuilt.append(1),
+        reset=lambda: None,
+    )
+    tui = OceanTui(session, None, settings, view)  # type: ignore[arg-type]
+    editor = LineEditor()
+    assert tui._slash("/skill") is False
+    picker = view.snapshot().picker
+    assert picker is not None
+    assert picker.kind == "skill"
+    assert {item.name for item in picker.items} >= {"frontend-design"}
+    first = picker.items[0].name
+    tui._apply_picker(tui._pick.feed(b" "), editor)
+    tui._apply_picker(tui._pick.feed(b"\r"), editor)
+    assert view.snapshot().picker is None
+    assert rebuilt == [1]
+    assert get_skills().active == (first,)
+    assert any(first in item.text for item in view.snapshot().items)
+
+    assert tui._slash("/mascot") is False
+    picker = view.snapshot().picker
+    assert picker is not None
+    assert picker.kind == "mascot"
+    assert any(item.name == "default" and item.checked for item in picker.items)
+    tui._apply_picker(tui._pick.feed(b"\x1b"), editor)
+    assert view.snapshot().picker is None
+    assert get_bank().pack_name == "default"
+    skills.replace_active([])
+    reset_skills()
+    reset_bank()
+
+
+def test_tui_model_open_picker_and_confirm() -> None:
+    from types import SimpleNamespace
+
+    from coding_agent.agent.state import LoopState
+    from coding_agent.cli.editor import LineEditor
+    from coding_agent.cli.tui import OceanTui
+    from coding_agent.cli.view import ChatView
+    from fakes.settings import make_settings
+
+    view = ChatView()
+    settings = make_settings()
+    seen: list[str] = []
+    session = SimpleNamespace(
+        loop=SimpleNamespace(
+            state=LoopState(),
+            settings=settings,
+            llm=SimpleNamespace(set_model=seen.append),
+        ),
+        reset=lambda: None,
+    )
+    tui = OceanTui(session, None, settings, view)  # type: ignore[arg-type]
+    editor = LineEditor()
+    assert tui._slash("/model") is False
+    picker = view.snapshot().picker
+    assert picker is not None
+    assert picker.kind == "model"
+    names = [item.name for item in picker.items]
+    assert "deepseek-v4-flash" in names
+    assert "deepseek-chat" in names
+    assert all("vision" not in name for name in names)
+    assert all(item.origin == "" and item.detail == "" for item in picker.items)
+    assert any(item.name == "deepseek-v4-flash" and item.checked for item in picker.items)
+    tui._apply_picker(tui._pick.feed(b"j"), editor)
+    tui._apply_picker(tui._pick.feed(b" "), editor)
+    tui._apply_picker(tui._pick.feed(b"\r"), editor)
+    assert view.snapshot().picker is None
+    assert settings.deepseek_model == "deepseek-v4-pro"
+    assert seen == ["deepseek-v4-pro"]
+    assert any("deepseek-v4-pro" in item.text for item in view.snapshot().items)
+
 
 
 def test_tui_tab_focuses_files_and_nav_moves(tmp_path) -> None:

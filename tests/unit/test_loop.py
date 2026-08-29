@@ -11,12 +11,13 @@ from coding_agent.app.system_prompt import build_system_prompt
 from coding_agent.config.settings import Settings
 from coding_agent.context.estimator import HeuristicTokenEstimator
 from coding_agent.context.manager import ContextManager
-from coding_agent.context.policy import TruncatingContextPolicy
+from coding_agent.context.policy import SummarizingContextPolicy, TruncatingContextPolicy
 from coding_agent.context.store import ConversationStore
 from coding_agent.domain.events import FinalAnswer, SessionEnded, ToolExecutionFinished
 from coding_agent.domain.messages import ChatMessage, Role
 from coding_agent.errors import LLMAuthError, LLMUnavailableError
 from coding_agent.llm.client import LLMClient
+from coding_agent.llm.summarize import LlmConversationSummarizer
 from coding_agent.llm.types import FinishReason
 from coding_agent.parsing.fallback import ContentFallbackParser
 from coding_agent.parsing.native import NativeToolCallParser
@@ -39,8 +40,15 @@ from fakes.settings import make_settings
 from fakes.sink import RecordingSink
 
 
-def build_loop(llm: LLMClient, tmp_path: Path, sink: RecordingSink,
-               settings: Settings | None = None) -> AgentLoop:
+def build_loop(
+    llm: LLMClient,
+    tmp_path: Path,
+    sink: RecordingSink,
+    settings: Settings | None = None,
+    *,
+    summarize: bool = False,
+    compact_budget: int | None = None,
+) -> AgentLoop:
     settings = settings or make_settings(workdir=tmp_path)
     workspace = Workspace(tmp_path)
     registry = ToolRegistry()
@@ -51,19 +59,27 @@ def build_loop(llm: LLMClient, tmp_path: Path, sink: RecordingSink,
         timeout_s=settings.bash_timeout_s, output_limit=settings.tool_output_max_chars,
     )
     estimator = HeuristicTokenEstimator()
-    send_budget = settings.max_context_tokens - settings.completion_reserve_tokens
+    send_budget = compact_budget
+    if send_budget is None:
+        send_budget = settings.max_context_tokens - settings.completion_reserve_tokens
     system = ChatMessage(
         role=Role.SYSTEM,
         content=build_system_prompt(workspace_root=str(workspace.root),
                                     tool_names=registry.names()),
     )
+    truncating = TruncatingContextPolicy(
+        send_budget=send_budget,
+        tool_output_max_chars=settings.tool_output_max_chars,
+        estimator=estimator,
+    )
+    policy = truncating
+    if summarize:
+        policy = SummarizingContextPolicy(
+            truncating, LlmConversationSummarizer(llm, model=settings.deepseek_model)
+        )
     context = ContextManager(
         store=ConversationStore(system),
-        policy=TruncatingContextPolicy(
-            send_budget=send_budget,
-            tool_output_max_chars=settings.tool_output_max_chars,
-            estimator=estimator,
-        ),
+        policy=policy,
         estimator=estimator,
         send_budget=send_budget,
     )
@@ -137,6 +153,31 @@ def test_scenario_c_tool_failure_feeds_back_and_continues(tmp_path: Path) -> Non
     second_request = llm.calls[1]
     tool_msgs = [m for m in second_request.messages if m.role is Role.TOOL]
     assert any("ENOENT" in (m.content or "") for m in tool_msgs)
+
+
+def test_max_turns_does_not_count_summary_complete(tmp_path: Path) -> None:
+    class _SplitLLM(ScriptedLLM):
+        summary_calls = 0
+
+        def complete(self, request):  # noqa: ANN001
+            if not request.tools:
+                type(self).summary_calls += 1
+                return assistant_text("memo of old turns")
+            return super().complete(request)
+
+    _SplitLLM.summary_calls = 0
+    llm = _SplitLLM(
+        [assistant_tools([("list_dir", {})]), assistant_tools([("list_dir", {})])]
+    )
+    sink = RecordingSink()
+    settings = make_settings(workdir=tmp_path, max_turns=2)
+    loop = build_loop(llm, tmp_path, sink, settings, summarize=True, compact_budget=200)
+    loop.run("pad " + "词" * 80)
+    assert len(llm.calls) >= 2
+    task_calls = [c for c in llm.calls if c.tools]
+    assert len(task_calls) == 2
+    assert _SplitLLM.summary_calls >= 1
+    assert loop.last_end_reason == "max_turns"
 
 
 def test_scenario_d_max_turns_stops_after_tools(tmp_path: Path) -> None:
@@ -243,3 +284,21 @@ def test_session_ended_always_emitted(tmp_path: Path) -> None:
     loop.run("task")
     ended = sink.of_type(SessionEnded)
     assert len(ended) == 1 and ended[0].reason == "natural"
+
+
+def test_thinking_flag_omitted_when_model_has_no_toggle(tmp_path: Path) -> None:
+    llm = ScriptedLLM([assistant_text("ok")])
+    sink = RecordingSink()
+    settings = make_settings(workdir=tmp_path, thinking=True, deepseek_model="other-chat")
+    loop = build_loop(llm, tmp_path, sink, settings)
+    loop.run("hi")
+    assert llm.calls[0].thinking_enabled is False
+
+
+def test_thinking_flag_honored_for_v4_flash(tmp_path: Path) -> None:
+    llm = ScriptedLLM([assistant_text("ok")])
+    sink = RecordingSink()
+    settings = make_settings(workdir=tmp_path, thinking=True)
+    loop = build_loop(llm, tmp_path, sink, settings)
+    loop.run("hi")
+    assert llm.calls[0].thinking_enabled is True

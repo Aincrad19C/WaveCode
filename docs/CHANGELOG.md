@@ -1,6 +1,6 @@
 # 变更记录（Changelog）
 
-当前版本：**v2.13.2**
+当前版本：**v2.22.0**
 
 版本号为三位 `v大功能.小功能.小bug`（例如 `v0.1.0`），只递增、不改写已发布条目。
 
@@ -21,6 +21,83 @@
 设计阶段视为一次交付，不保留中间草稿版本。第一次可运行实现合并进主线时升 **大功能** 到 `v1.0.0`。
 
 ---
+
+## v2.22.0 — 2026-08-29
+
+**类型：** 小功能
+
+- 发行 skill 只保留 `frontend-design`（仿 Anthropic 官方前端设计 skill：先定 token 再写页面）。去掉 `pytest-style`、`git-commit`、`code-review`、`debug`、`python-edit`、`shell-safe`。
+
+## v2.21.0 — 2026-08-29
+
+**类型：** 小功能
+
+- 启动时创建工作区 `.wavecode/mascots/`，并把发行包 `default` 复制进去（同时复制到 `~/.wavecode/mascots/default/`）。已有文件不覆盖。
+
+## v2.20.1 — 2026-08-29
+
+**类型：** 小 bug
+
+- `/help`、`/mascot` 列表与 `~/.wavecode/mascots/README.txt` 写明新包路径，避免只看到勾选、不知道往哪放文件夹。
+
+## v2.20.0 — 2026-08-29
+
+**类型：** 小功能
+
+- `/model` 只显示模型 id。视觉模型不列出（本程序只发文本）。接口 id 原样保留，并与 `deepseek-chat` / `deepseek-reasoner` 合并，避免列表只剩 V4。
+
+## v2.19.0 — 2026-08-29
+
+**类型：** 小功能
+
+- `/model` 打开模型勾选列表（全屏空格/Enter，REPL 打印目录）。有密钥时优先 `GET /models`，否则用官方文档里的 V4 目录。
+- 当前模型没有 thinking 时：HUD、`/help`、`/status` 不显示 thinking 开关；`/think` 提示不支持；请求体也不带 `thinking`。
+
+## v2.18.0 — 2026-08-29
+
+**类型：** 小功能
+
+- 七个工具的 schema 说明改为完整陈述句，去掉口语与括号夹注。
+- `/skill`、`/mascot` 只打开勾选列表；不再接受包名、`-名` 或 `clear` 参数。
+
+## v2.17.0 — 2026-08-29
+
+**类型：** 小功能
+
+- `/undo` 还原本任务 `write_file` / `edit_file` 的磁盘改动（新建的删掉，改过的回到改前）。`bash` 动过的文件不撤。新任务一旦再改文件，上一窗就不能撤了。对话历史不动。
+
+## v2.16.1 — 2026-08-29
+
+**类型：** 小 bug
+
+- 勾选列表已装载项改为 `[✓]`，不再用叉号 `[x]`。
+
+## v2.16.0 — 2026-08-29
+
+**类型：** 小功能
+
+- `/skill`、`/mascot` 无参数时在全屏列出全部项并勾选（空格切换、Enter 确认）；滚动 REPL 仍打印带 `[x]` 的列表。
+- 随包装 6 个默认 skill：`pytest-style`、`git-commit`、`code-review`、`debug`、`python-edit`、`shell-safe`。用户/工作区同名覆盖内置。
+
+## v2.15.0 — 2026-08-29
+
+**类型：** 小功能
+
+- 超预算时默认用一次无工具 LLM 把丢掉的旧轮次收成备忘；失败回退 user 原文摘录。`WAVEMIO_SUMMARIZE_CONTEXT=false` 可关。
+- `/skill`：从 `~/.wavecode/skills/` 与工作区 `.wavecode/skills/` 读取 `SKILL.md`，目录进 system，全文按需装载。
+
+## v2.14.0 — 2026-08-29
+
+**类型：** 小功能
+
+- 设计文档规定上下文压缩默认改为模型摘要：丢掉的旧轮次用一次无工具 LLM 收成备忘，失败回退 user 原文摘录（04 §4.2）。`WAVEMIO_SUMMARIZE_CONTEXT=false` 可关。
+- 设计文档规定 `/skill`：从 `~/.wavecode/skills/` 与工作区 `.wavecode/skills/` 读取 `SKILL.md`，目录进 system、全文按需装载（13）。
+
+## v2.13.3 — 2026-08-29
+
+**类型：** 小 bug
+
+- 工具跑完后下一轮 LLM 会切回 think 表情，不再从第一次 tool 一直停到最终回答。
 
 ## v2.13.2 — 2026-08-29
 

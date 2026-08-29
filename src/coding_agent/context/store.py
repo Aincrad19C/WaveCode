@@ -23,6 +23,15 @@ class ConversationStore:
     def reset_keeping_system(self) -> None:
         self._messages = [self._system]
 
+    def replace_system(self, system: ChatMessage) -> None:
+        if system.role is not Role.SYSTEM:
+            raise ValueError("replace_system requires a system message")
+        self._system = system
+        if self._messages:
+            self._messages[0] = system
+        else:
+            self._messages = [system]
+
     def replace_tail_view(self, view: Sequence[ChatMessage]) -> None:
         """Write back the compacted view; only ContextManager calls this."""
         if not view or view[0].role is not Role.SYSTEM:

@@ -18,12 +18,13 @@
 2. errors + domain + settings
 3. Workspace + 全部 builtin tools + 单测
 4. Parser + StreamAssembler + 单测
-5. ContextManager + TruncatingPolicy + 单测
+5. ContextManager + TruncatingPolicy + SummarizingPolicy + 单测
 6. Termination + 单测
 7. DeepSeekClient（可用 httpx mock）
 8. AgentLoop + FakeLLM 单测
 9. CLI：半块像素鲸鱼娘 + 蓝主题 REPL（见 09、12；禁止 ASCII 猫）
 10. bootstrap 接线 + README 运行说明
+11. 模型摘要压缩（04 §4.2）+ `/skill`（13）+ 单测
 
 ## 2. 目录树（必须原样创建）
 
@@ -65,12 +66,20 @@ Coding_Agent/
       deepseek.py
       retry.py
       stream.py
+      summarize.py           # LlmConversationSummarizer，无工具 complete
+      catalog.py             # 文本模型 id、thinking 标记、GET /models（过滤视觉）
     context/
       __init__.py
       manager.py
       store.py
       estimator.py
       policy.py
+      summarizer.py          # ConversationSummarizer 端口
+    skills/
+      __init__.py
+      pack.py                # 发现 SKILL.md、解析 frontmatter
+      bank.py                # 本会话已装载集合
+      packs/                 # 发行默认 skill（每包一份 SKILL.md）
     tools/
       __init__.py
       base.py
@@ -130,6 +139,7 @@ Coding_Agent/
       test_parser.py
       test_json_repair.py
       test_context.py
+      test_skills.py
       test_termination.py
       test_loop.py
       test_retry.py
@@ -187,7 +197,9 @@ testpaths = ["tests"]
 
 ## 4. 系统提示词 `app/system_prompt.py`
 
-函数：`build_system_prompt(*, workspace_root: str, tool_names: Sequence[str]) -> str`
+函数：`build_system_prompt(*, workspace_root: str, tool_names: Sequence[str], skill_catalog: Sequence[tuple[str, str]] = (), active_skills: Sequence[tuple[str, str]] = ()) -> str`
+
+在原模板 Rules 之后按 13 §5 追加 Available skills / Active skills 段（空则省略）。
 
 完整英文模板（实现时原样使用，可微调标点，不可删行为约束）：
 
@@ -228,13 +240,32 @@ def build_session(settings: Settings, extra_sinks: list[EventSink] | None = None
     executor = ToolExecutor(registry, ws, timeout_s=settings.bash_timeout_s,
                             output_limit=settings.tool_output_max_chars)
     estimator = HeuristicTokenEstimator()
-    policy = TruncatingContextPolicy(
+    truncating = TruncatingContextPolicy(
         send_budget=settings.max_context_tokens - settings.completion_reserve_tokens,
         tool_output_max_chars=settings.tool_output_max_chars,
         estimator=estimator,
     )
+    http = httpx.Client(timeout=settings.http_timeout_s)
+    llm = DeepSeekClient(
+        api_key=settings.deepseek_api_key,
+        base_url=settings.deepseek_base_url,
+        model=settings.deepseek_model,
+        retry=ExponentialBackoffRetry(),
+        http=http,
+    )
+    policy: ContextPolicy = truncating
+    if settings.summarize_context:
+        policy = SummarizingContextPolicy(
+            inner=truncating,
+            summarizer=LlmConversationSummarizer(llm),
+        )
+    skills = SkillBank()
+    skills.workdir = ws.root
     system = ChatMessage(role=Role.SYSTEM, content=build_system_prompt(
-        workspace_root=str(ws.root), tool_names=registry.names()
+        workspace_root=str(ws.root),
+        tool_names=registry.names(),
+        skill_catalog=skills.catalog(),
+        active_skills=skills.active_bodies(),
     ))
     context = ContextManager(store=ConversationStore(system), policy=policy, estimator=estimator)
     parser = ParserPipeline([NativeToolCallParser(), ContentFallbackParser()])
@@ -246,14 +277,6 @@ def build_session(settings: Settings, extra_sinks: list[EventSink] | None = None
         MaxTurnsCondition(settings.max_turns),
         NaturalCompletionCondition(),
     ])
-    http = httpx.Client(timeout=settings.http_timeout_s)
-    llm = DeepSeekClient(
-        api_key=settings.deepseek_api_key,
-        base_url=settings.deepseek_base_url,
-        model=settings.deepseek_model,
-        retry=ExponentialBackoffRetry(),
-        http=http,
-    )
     # sinks 由 CLI 传入 Fanout(Rich, Jsonl)
     loop = AgentLoop(llm=llm, context=context, executor=executor, registry=registry,
                      parser=parser, termination=term, settings=settings, sink=FanoutSink(...))
@@ -331,7 +354,7 @@ class ScriptedLLM(LLMClient):
 - [ ] one-shot 能创建文件（工作区可见）
 - [ ] 模型 tool_calls 被执行，失败也会继续
 - [ ] Ctrl+C 取消
-- [ ] `/reset` `/help` `/quit` 工作
+- [ ] `/reset` `/help` `/skill` `/model` `/undo` `/quit` 工作
 - [ ] `.wavemio/logs/*.jsonl` 产生
 - [ ] `bash` 子进程看不到 `DEEPSEEK_API_KEY`
 
@@ -355,10 +378,18 @@ class ScriptedLLM(LLMClient):
 | `domain/messages.py` | Role, ToolCallRequest, ChatMessage |
 | `domain/events.py` | 02 列出的全部事件 dataclass |
 | `domain/ports.py` | EventSink, NullSink, FanoutSink |
-| `llm/deepseek.py` | complete + stream + 状态码映射 |
+| `llm/deepseek.py` | complete + stream + 状态码映射；`set_model` / `GET /models` |
+| `llm/catalog.py` | 文本模型 id、thinking 标记、`/model` 列表（无视觉） |
 | `llm/stream.py` | StreamAssembler |
 | `parsing/pipeline.py` | Native 然后 Fallback |
 | `agent/loop.py` | 03 状态机，可拆私有方法但行为一致 |
+| `context/policy.py` | TruncatingContextPolicy + SummarizingContextPolicy |
+| `context/summarizer.py` | ConversationSummarizer 端口 |
+| `llm/summarize.py` | LlmConversationSummarizer（无 tools / 无 stream / 无 thinking） |
+| `skills/pack.py` | 发现与解析 SKILL.md，含发行 packs |
+| `skills/bank.py` | 本会话装载集合、`/skill` 文案 |
+| `tools/workspace.py` | 路径沙箱 + `/undo` 快照 |
+| `cli/picker.py` | `/skill` `/mascot` `/model` 全屏勾选列表 |
 | `cli/app.py` | argparse + main() |
 | `cli/branding.py` | `PRODUCT_NAME = "Wavemio"`、`CLI_NAME = "wavemio"` |
 | `cli/pixel.py` | HalfBlockRenderer |
@@ -378,6 +409,7 @@ class ScriptedLLM(LLMClient):
 | max_turns | WAVEMIO_MAX_TURNS | 30 |
 | debug | WAVEMIO_DEBUG | false |
 | ascii_fallback | WAVEMIO_ASCII | false |
+| summarize_context | WAVEMIO_SUMMARIZE_CONTEXT | true |
 
 CLI 参数覆盖 Settings（workdir、model、think、max-turns、verbose）。
 

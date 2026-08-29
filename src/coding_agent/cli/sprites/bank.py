@@ -17,7 +17,7 @@ from coding_agent.cli.sprites.pack import (
     user_home_packs,
 )
 
-_USAGE = "用法：/mascot  或  /mascot 包名"
+_USAGE = "请输入 /mascot 打开勾选列表。"
 
 
 class MascotBank:
@@ -55,21 +55,29 @@ class MascotBank:
     def render(self) -> Text:
         return render_halfblock(self.grid())
 
-    def list_text(self) -> str:
-        packs = discover_packs(self.workdir)
+    def rows(self) -> list[tuple[str, str, bool]]:
+        """name, origin, checked. Radio: at most one checked."""
         self._ensure()
+        return [
+            (name, pack_origin(path), name == self.pack_name)
+            for name, path in discover_packs(self.workdir).items()
+        ]
+
+    def list_text(self) -> str:
         lines = [
             f"当前  {self.pack_name}",
             "",
-            f"投放目录  {user_home_packs()}",
-            "把含 idle.gif / idle.png / idle.txt 的文件夹放进去，然后 /mascot 包名。",
-            "工作区也可用  <工作区>/.wavecode/mascots/<包名>/",
+            "新包放到  ~/.wavecode/mascots/<包名>/  或  <工作区>/.wavecode/mascots/<包名>/",
+            "启动时会把 default 复制进上述目录（已有文件不覆盖）。",
+            f"本机用户目录  {user_home_packs()}",
+            "全屏：空格勾选，Enter 确认，Esc 取消。",
+            "同名时工作区覆盖用户目录，用户目录覆盖发行包。",
             "",
             "包：",
         ]
-        for name, path in packs.items():
-            mark = "*" if name == self.pack_name else " "
-            lines.append(f"  {mark} {name:12} {pack_origin(path)}")
+        for name, origin, checked in self.rows():
+            mark = "✓" if checked else " "
+            lines.append(f"  [{mark}] {name:12} {origin}")
         lines.append("")
         lines.append(_USAGE)
         return "\n".join(lines)
@@ -78,17 +86,19 @@ class MascotBank:
         if name in POSES:
             self.pose = name
 
-    def apply(self, token: str) -> tuple[str, str]:
-        """Return (kind, body) for slash dispatch. kind is note|status|warn."""
-        name = token.strip()
-        if not name:
-            return "status", self.list_text()
+    def select(self, name: str) -> tuple[str, str]:
         packs = discover_packs(self.workdir)
         if name in packs:
             self.pack_name = name
             self._loaded_key = None
             return "note", f"立绘包 = {name}"
         return "warn", f"未知立绘包 {name}。{_USAGE}"
+
+    def apply(self, token: str) -> tuple[str, str]:
+        """Slash dispatch: empty token opens the picker; extra arguments are rejected."""
+        if token.strip():
+            return "warn", _USAGE
+        return "pick", self.list_text()
 
 
 _bank: MascotBank | None = None

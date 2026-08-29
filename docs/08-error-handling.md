@@ -8,6 +8,7 @@
 可恢复 LLM   → Client 内退避重试；耗尽则 consecutive_failures
 解析错误     → 回灌纠错 user 消息；三次后停
 工具错误     → Observation（失败文本），循环继续
+摘要 LLM     → 回退原文摘录，主循环继续；不计 consecutive_llm_failures
 用户取消     → 干净收尾动画，exit 0（REPL 回到提示符）
 编程错误     → 让它崩溃并打印 traceback（不要吞掉 Bug）
 ```

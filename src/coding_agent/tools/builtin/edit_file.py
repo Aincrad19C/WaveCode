@@ -14,13 +14,17 @@ class EditFileTool(Tool):
     name = "edit_file"
     description = (
         "Replace exactly one occurrence of old_text with new_text in a file. "
-        "old_text must uniquely identify the span. Literal match, not regex."
+        "Matching is literal, not a regular expression. "
+        "old_text must occur once; zero or multiple matches fail."
     )
     parameters = {
         "type": "object",
         "properties": {
-            "path": {"type": "string", "description": "Path relative to the workspace root."},
-            "old_text": {"type": "string", "description": "Exact text to replace (unique)."},
+            "path": {"type": "string", "description": "Workspace-relative path."},
+            "old_text": {
+                "type": "string",
+                "description": "Exact text to replace. Must occur once in the file.",
+            },
             "new_text": {"type": "string", "description": "Replacement text."},
         },
         "required": ["path", "old_text", "new_text"],
@@ -34,6 +38,7 @@ class EditFileTool(Tool):
         new_text: str = args["new_text"]
         if not old_text:
             raise ToolError("old_text must not be empty")
+        ctx.workspace.remember(path)
         try:
             original = path.read_text(encoding="utf-8")
         except UnicodeDecodeError:

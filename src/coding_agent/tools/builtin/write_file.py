@@ -11,12 +11,15 @@ from coding_agent.tools.base import Tool, ToolContext
 
 class WriteFileTool(Tool):
     name = "write_file"
-    description = "Create or overwrite a UTF-8 file. Always overwrites. Parent dirs are created."
+    description = (
+        "Create or overwrite a UTF-8 file at a workspace-relative path. "
+        "An existing file is replaced in full. Missing parent directories are created."
+    )
     parameters = {
         "type": "object",
         "properties": {
-            "path": {"type": "string", "description": "Path relative to the workspace root."},
-            "content": {"type": "string", "description": "Full file content."},
+            "path": {"type": "string", "description": "Workspace-relative path."},
+            "content": {"type": "string", "description": "Complete file contents."},
         },
         "required": ["path", "content"],
     }
@@ -24,6 +27,7 @@ class WriteFileTool(Tool):
     def execute(self, args: Mapping[str, Any], ctx: ToolContext) -> str:
         path = ctx.workspace.resolve(args["path"])
         content: str = args["content"]
+        ctx.workspace.remember(path)
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
             data = content.encode("utf-8")

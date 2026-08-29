@@ -1,8 +1,15 @@
 from __future__ import annotations
 
+import pytest
+
 from coding_agent.context.estimator import HeuristicTokenEstimator
 from coding_agent.context.manager import ContextManager
-from coding_agent.context.policy import OMITTED_HEADER, TruncatingContextPolicy
+from coding_agent.context.policy import (
+    OMITTED_HEADER,
+    SUMMARY_HEADER,
+    SummarizingContextPolicy,
+    TruncatingContextPolicy,
+)
 from coding_agent.context.store import ConversationStore
 from coding_agent.domain.messages import ChatMessage, Role, ToolCallRequest
 from coding_agent.llm.types import TokenUsage
@@ -147,3 +154,88 @@ def test_cjk_estimation_denser_than_ascii() -> None:
     ascii_msg = ChatMessage(role=Role.USER, content="a" * 100)
     cjk_msg = ChatMessage(role=Role.USER, content="字" * 100)
     assert estimator.estimate_message(cjk_msg) > estimator.estimate_message(ascii_msg)
+
+
+class _FakeSummarizer:
+    def __init__(self, text: str = "MEMO", *, fail: bool = False) -> None:
+        self.text = text
+        self.fail = fail
+        self.calls: list[tuple[list[ChatMessage], str | None]] = []
+
+    def summarize(self, *, dropped, previous_summary):  # noqa: ANN001
+        self.calls.append((list(dropped), previous_summary))
+        if self.fail:
+            raise ValueError("boom")
+        return self.text
+
+
+def _padded_history(n: int) -> list[ChatMessage]:
+    messages = [system()]
+    for i in range(n):
+        messages.append(ChatMessage(role=Role.USER, content=f"old task {i} " + "词" * 50))
+        messages.append(ChatMessage(role=Role.ASSISTANT, content="done " + "词" * 50))
+    return messages
+
+
+def test_summarizing_inserts_model_memo() -> None:
+    estimator = HeuristicTokenEstimator()
+    inner = make_policy(estimator, budget=150)
+    fake = _FakeSummarizer("kept the first tasks")
+    policy = SummarizingContextPolicy(inner, fake)
+    compacted, note = policy.compact(
+        _padded_history(8), budget=150, estimator=estimator, tool_schemas=[]
+    )
+    assert compacted[0].role is Role.SYSTEM
+    assert SUMMARY_HEADER in (compacted[1].content or "")
+    assert "kept the first tasks" in (compacted[1].content or "")
+    assert "summarized" in note
+    assert fake.calls
+
+
+def test_summarizing_falls_back_on_error() -> None:
+    estimator = HeuristicTokenEstimator()
+    inner = make_policy(estimator, budget=150)
+    policy = SummarizingContextPolicy(inner, _FakeSummarizer(fail=True))
+    compacted, note = policy.compact(
+        _padded_history(8), budget=150, estimator=estimator, tool_schemas=[]
+    )
+    assert OMITTED_HEADER in (compacted[1].content or "")
+    assert "summary_fallback" in note
+
+
+def test_summarizing_folds_previous_memo() -> None:
+    estimator = HeuristicTokenEstimator()
+    inner = make_policy(estimator, budget=150)
+    fake = _FakeSummarizer("round two")
+    policy = SummarizingContextPolicy(inner, fake)
+    first, _ = policy.compact(
+        _padded_history(8), budget=150, estimator=estimator, tool_schemas=[]
+    )
+    extra = [
+        ChatMessage(role=Role.USER, content="new task " + "词" * 50),
+        ChatMessage(role=Role.ASSISTANT, content="more " + "词" * 50),
+    ]
+    policy.compact(list(first) + extra, budget=150, estimator=estimator, tool_schemas=[])
+    assert fake.calls[-1][1] is not None
+    assert SUMMARY_HEADER in fake.calls[-1][1]
+
+
+def test_replace_system_keeps_tail() -> None:
+    store = ConversationStore(system())
+    store.append(ChatMessage(role=Role.USER, content="stay"))
+    store.replace_system(ChatMessage(role=Role.SYSTEM, content="updated"))
+    assert store.all()[0].content == "updated"
+    assert store.all()[1].content == "stay"
+    store.reset_keeping_system()
+    assert len(store.all()) == 1
+    assert store.all()[0].content == "updated"
+
+
+def test_llm_summarizer_empty_raises() -> None:
+    from coding_agent.llm.summarize import LlmConversationSummarizer
+    from fakes.llm import ScriptedLLM, assistant_text
+
+    summarizer = LlmConversationSummarizer(ScriptedLLM([assistant_text("")]), model="m")
+    with pytest.raises(ValueError):
+        summarizer.summarize(dropped=(), previous_summary=None)
+

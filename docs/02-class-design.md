@@ -224,11 +224,12 @@ class ExponentialBackoffRetry(RetryPolicy):
 
 职责：
 
-1. 把 `ModelRequest` 序列化为官方 JSON（含可选 `thinking: {type: enabled|disabled}`）。
+1. 把 `ModelRequest` 序列化为官方 JSON。仅当目录判定该模型支持 thinking 时才带 `thinking: {type: enabled|disabled}`。
 2. HTTP：`httpx.Client`，timeout 可配。
 3. 状态码映射到异常谱系。
 4. 非流式：`response.json()` → `parse_chat_completion(dict) -> ModelResponse`。
 5. 流式：解析 `data: {...}` 行，忽略 `data: [DONE]`，用 `StreamAssembler` 拼 `tool_calls` 增量。
+6. 可选（不在 `LLMClient` ABC 上）：`set_model`、`list_model_ids`（`GET {base}/models`），供 `/model` 使用。`llm/catalog.py` 只列文本模型 id（过滤 `vision`），接口 id 不改写成 V4。
 
 **本类不得执行工具、不得修改 ConversationStore。**
 
@@ -302,6 +303,12 @@ class Workspace:
         """相对 root；禁止逃逸；绝对路径仅当仍位于 root 下。"""
 
     def relpath(self, path: Path) -> str: ...
+    def mark_new_task(self) -> None:
+        """下一次 remember 开启新的 /undo 窗口。"""
+    def remember(self, path: Path) -> None:
+        """write_file / edit_file 改盘前快照；同一窗口同一路径只记第一次。"""
+    def restore_task_files(self) -> list[str]:
+        """按快照还原并清空窗口。新建文件删除。"""
 ```
 
 逃逸判定：`(root / user_path).resolve()` 的 `relative_to(root)` 失败则 `ToolPathError`。  
@@ -365,6 +372,8 @@ class ConversationStore:
     def reset_keeping_system(self) -> None: ...
     def replace_tail_view(self, view: Sequence[ChatMessage]) -> None:
         """仅 ContextManager 在压缩后写回；system 必须仍是第一条。"""
+    def replace_system(self, system: ChatMessage) -> None:
+        """/skill 重建 system 时用：替换 index 0，其余消息不动。"""
 ```
 
 ### 5.3 `context/policy.py`
@@ -383,8 +392,18 @@ class ContextPolicy(ABC):
         """返回 (可发送列表, 人类可读 note)。不得丢掉 system。"""
 ```
 
-V1 实现 `TruncatingContextPolicy`（见 04）。  
-预留 `SummarizingContextPolicy(LLMClient)`，V1 不接线。
+实现 `TruncatingContextPolicy`（窗口 + 截断 + 原文摘录兜底，见 04 §4）与 `SummarizingContextPolicy`（先窗口，再对 dropped 块做模型摘要，见 04 §4.2）。  
+`SummarizingContextPolicy(inner: TruncatingContextPolicy, summarizer: ConversationSummarizer)` 为 bootstrap **默认**接线。`summarize_context=false` 时只接 inner。
+
+```python
+class ConversationSummarizer(Protocol):
+    def summarize(
+        self,
+        *,
+        dropped: Sequence[ChatMessage],
+        previous_summary: str | None,
+    ) -> str: ...
+```
 
 ### 5.4 `context/manager.py` — `ContextManager`
 
@@ -496,6 +515,8 @@ class AgentSession:
     def __init__(self, loop: AgentLoop, context: ContextManager, sink: EventSink): ...
     def ask(self, user_text: str) -> str: ...
     def reset(self) -> None: ...
+    def rebuild_system(self) -> None:
+        """按当前 SkillBank 重写 system，不清对话。/skill 成功后调用。"""
 ```
 
 REPL 持有一个 Session。
@@ -512,6 +533,7 @@ REPL 持有一个 Session。
 | `WhalechanAnimator` | Live 换帧；禁止 ASCII 猫 |
 | `RichEventSink` | Event → 终端 |
 | `Repl` | 提示符、斜杠命令 |
+| `SkillBank` | 见 13；实现在 `coding_agent.skills`，CLI 只做 `/skill` 分发 |
 | `build_parser()` | argparse |
 | `branding.py` | `PRODUCT_NAME = "Wavemio"` / `CLI_NAME = "wavemio"` 唯一来源 |
 
@@ -556,6 +578,7 @@ class Settings(BaseSettings):
     parallel_readonly_tools: bool = False
     log_dir: Path = Path(".wavemio/logs")
     ascii_fallback: bool = False  # WAVEMIO_ASCII
+    summarize_context: bool = True  # WAVEMIO_SUMMARIZE_CONTEXT
 ```
 
 DeepSeek 三项用显式 alias，不受 `WAVEMIO_` 前缀影响。其余字段读 `WAVEMIO_WORKDIR` 等。
@@ -625,6 +648,7 @@ classDiagram
     compact()
   }
   ContextPolicy <|-- TruncatingContextPolicy
+  ContextPolicy <|-- SummarizingContextPolicy
 
   class EventSink {
     <<protocol>>

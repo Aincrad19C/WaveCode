@@ -60,6 +60,10 @@ sequenceDiagram
   L->>M: append user message
   loop 直到 TerminationCondition
     L->>M: build_messages(budget)
+    opt 超预算且 summarize_context
+      M->>D: 无工具 complete（摘要，不计 turn）
+      D-->>M: 备忘文本（失败则原文摘录）
+    end
     L->>D: complete_or_stream(request)
     D-->>L: raw JSON / SSE
     L->>P: parse(raw)
@@ -85,8 +89,9 @@ src/coding_agent/
   domain/        与基础设施无关的消息/事件/结果类型
   errors/        异常谱系
   llm/           LLM 端口与 DeepSeek 适配器
-  context/       历史与窗口策略
-  tools/         工具端口、注册、执行、沙箱、内置工具
+  context/       历史与窗口策略（截断 + 可选模型摘要）
+  skills/        SKILL.md 发现与本会话装载（不是工具）
+  tools/         工具端口、注册、执行、沙箱、工具实现
   parsing/       输出解析管道
   termination/   终止条件
   agent/         循环与会话（应用层）
@@ -120,7 +125,8 @@ src/coding_agent/
 - `ToolRegistry` + 7 个 Tool
 - `ToolExecutor`
 - `HeuristicTokenEstimator`
-- `TruncatingContextPolicy`
+- `TruncatingContextPolicy`，默认再包一层 `SummarizingContextPolicy`
+- `SkillBank`（发现发行包 `skills/packs`、`~/.wavecode/skills` 与工作区 `.wavecode/skills`）
 - `ContextManager`（每个 Session 一个；REPL 多轮任务共享同一 Session 历史，one-shot 用新 Session）
 - `DeepSeekClient(httpx.Client)`
 - `ParserPipeline`

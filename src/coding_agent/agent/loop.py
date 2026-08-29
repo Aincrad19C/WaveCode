@@ -28,6 +28,7 @@ from coding_agent.domain.events import (
 from coding_agent.domain.messages import ChatMessage, Role
 from coding_agent.domain.ports import EventSink
 from coding_agent.errors import CancelledError, LLMAuthError, LLMError, ParseError
+from coding_agent.llm.catalog import supports_thinking
 from coding_agent.llm.client import LLMClient
 from coding_agent.llm.types import FinishReason, ModelRequest, ModelResponse
 from coding_agent.parsing.base import OutputParser
@@ -67,6 +68,7 @@ class AgentLoop:
         text = user_text.strip()
         if not text:
             return ""
+        self.executor.workspace.mark_new_task()
         self.sink.on_event(UserMessageAccepted(text=text))
         self.context.append(ChatMessage(role=Role.USER, content=text))
         state = self.state = LoopState()
@@ -244,7 +246,9 @@ class AgentLoop:
             temperature=self.settings.temperature,
             max_tokens=self.settings.max_tokens,
             stream=self.settings.stream,
-            thinking_enabled=self.settings.thinking,
+            thinking_enabled=bool(
+                self.settings.thinking and supports_thinking(self.settings.deepseek_model)
+            ),
             reasoning_effort=self.settings.reasoning_effort,
         )
 

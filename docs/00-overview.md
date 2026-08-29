@@ -13,7 +13,7 @@
 | 题目要求 | 本设计落点 |
 |----------|------------|
 | 与大模型交互 | `DeepSeekClient` + Chat Completions |
-| 自主读写文件、执行命令 | 内置 Tool 家族 + `ToolExecutor` |
+| 自主读写文件、执行命令 | Tool 家族 + `ToolExecutor` |
 | 对话历史与上下文管理 | `ContextManager` + `ContextPolicy` |
 | 工具的定义与本地执行 | `Tool` ABC + `ToolRegistry` + 工作区沙箱 |
 | 模型输出的解析 | `OutputParser` 管道（原生 + 兜底 + JSON 修复） |
@@ -31,8 +31,9 @@
 - **主色**：蓝。吉祥物为像素风鲸鱼娘动态立绘（见 09、12），**不要** ASCII 机器猫。
 - **模型**：DeepSeek 官方 API。
   - 默认：`deepseek-v4-flash`（快、适合工具循环演示）
-  - 可配：`deepseek-v4-pro`（质量优先）
+  - 可配：`deepseek-v4-pro`（质量优先）；运行时 `/model` 勾选切换（有密钥则 `GET /models`，只列文本模型 id，不含视觉）
   - 兼容别名：若用户配置了已退役的 `deepseek-chat`，启动时打印警告并映射到 `deepseek-v4-flash` + `thinking.disabled`。
+  - 无 thinking 的模型：HUD / `/help` / `/status` 不显示 thinking 开关。
 - **API**：
   - Base URL：`https://api.deepseek.com`
   - 路径：`POST /chat/completions`（`/v1` 也可，实现时统一写成 `base_url.rstrip('/') + '/chat/completions'`）
@@ -45,9 +46,11 @@
 
 - REPL 与 one-shot 两种入口
 - 流式输出（content / reasoning_content / tool_calls 增量拼接）
-- 7 个内置工具：`read_file` `write_file` `edit_file` `list_dir` `glob_search` `grep` `bash`
+- 7 个工具：`read_file` `write_file` `edit_file` `list_dir` `glob_search` `grep` `bash`
 - 工作区沙箱（默认 `cwd`，可用 `--workdir`）
 - 上下文滑动窗口 + 大工具结果截断 + 预留下一轮 completion 配额
+- 超预算时默认用一次无工具 LLM 把丢掉的旧轮次收成摘要（失败则回退 user 原文摘录）
+- 发行包与用户/工作区 `SKILL.md` 包 + 斜杠 `/skill` 勾选装载进本会话 system（见 13）
 - 终止条件组合（最大轮次、无工具且有正文、连续失败、用户取消、墙钟、上下文预算）
 - LLM 传输层指数退避重试
 - 单元测试：循环、解析、沙箱、终止、上下文（全部用 Fake LLM，不打真实网络）
@@ -68,7 +71,7 @@
 - `LLMClient` → 将来可加 OpenAI / 本地 vLLM
 - `Tool` → 将来可加 `git_status` 等
 - `EventSink` → 将来可加 WebSocket 前端
-- `SummarizingCompactor` → V1 可先抛 `NotImplemented` 并走截断策略
+- `ConversationSummarizer` → 可换本地小模型；V1 用同一 `LLMClient` 无工具 complete
 
 ## 5. 凭据与安全红线
 
@@ -84,6 +87,7 @@ DEEPSEEK_API_KEY
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPSEEK_MODEL=deepseek-v4-flash
 WAVEMIO_WORKDIR=.
+WAVEMIO_SUMMARIZE_CONTEXT=true
 ```
 
 规则：
@@ -105,6 +109,7 @@ WAVEMIO_WORKDIR=.
 | Workspace | 文件工具允许触及的根目录 |
 | Event | 循环向 UI 广播的领域事件 |
 | Composition Root | `bootstrap.py`，唯一允许 `new` 具体类并接线的地方 |
+| Skill | 用户投放的 `SKILL.md` 说明书；`/skill` 装载进本会话 system，不是工具 |
 
 ## 7. 质量标准（面试可辩护）
 

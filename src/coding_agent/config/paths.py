@@ -12,6 +12,7 @@ from pathlib import Path
 PRODUCT_DIRNAME = ".wavecode"
 LEGACY_DIRNAME = ".wavemio"
 MASCOTS = "mascots"
+SKILLS = "skills"
 
 
 def user_data_dir() -> Path:
@@ -32,21 +33,30 @@ def workspace_mascot_dir(workdir: Path | None) -> Path | None:
     return Path(workdir) / PRODUCT_DIRNAME / MASCOTS
 
 
-def legacy_workspace_mascot_dir(workdir: Path | None) -> Path | None:
-    if workdir is None:
-        return None
-    return Path(workdir) / LEGACY_DIRNAME / MASCOTS
+def extra_data_roots(
+    subdir: str, workdir: Path | None = None, *, include_user: bool = True
+) -> list[Path]:
+    """Legacy home, current home, then workspace. Later entries override names."""
+    if not include_user:
+        return []
+    roots: list[Path] = [
+        Path.home() / LEGACY_DIRNAME / subdir,
+        Path.home() / PRODUCT_DIRNAME / subdir,
+    ]
+    if workdir is not None:
+        roots.append(Path(workdir) / LEGACY_DIRNAME / subdir)
+        roots.append(Path(workdir) / PRODUCT_DIRNAME / subdir)
+    return roots
 
 
 def extra_mascot_roots(workdir: Path | None = None, *, include_user: bool = True) -> list[Path]:
     """User and workspace mascot dirs. Later entries override the same pack name."""
-    if not include_user:
-        return []
-    roots: list[Path] = [legacy_user_mascot_dir(), user_mascot_dir()]
-    legacy_ws = legacy_workspace_mascot_dir(workdir)
-    ws = workspace_mascot_dir(workdir)
-    if legacy_ws is not None:
-        roots.append(legacy_ws)
-    if ws is not None:
-        roots.append(ws)
-    return roots
+    return extra_data_roots(MASCOTS, workdir, include_user=include_user)
+
+
+def extra_skill_roots(workdir: Path | None = None, *, include_user: bool = True) -> list[Path]:
+    return extra_data_roots(SKILLS, workdir, include_user=include_user)
+
+
+def user_skill_dir() -> Path:
+    return user_data_dir() / SKILLS

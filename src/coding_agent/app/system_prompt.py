@@ -1,6 +1,6 @@
 """System prompt builder (docs/10 §4). Static content only: workspace path,
-tool roster, behaviour rules. Current file listings are for list_dir, not the
-prompt (docs/04 §6)."""
+tool roster, behaviour rules, optional skill catalog. Current file listings
+are for list_dir, not the prompt (docs/04 §6)."""
 
 from __future__ import annotations
 
@@ -25,5 +25,24 @@ Rules:
 10. Never include API keys in files you write."""
 
 
-def build_system_prompt(*, workspace_root: str, tool_names: Sequence[str]) -> str:
-    return _TEMPLATE.format(workspace_root=workspace_root, tool_names=", ".join(tool_names))
+def build_system_prompt(
+    *,
+    workspace_root: str,
+    tool_names: Sequence[str],
+    skill_catalog: Sequence[tuple[str, str]] = (),
+    active_skills: Sequence[tuple[str, str]] = (),
+) -> str:
+    text = _TEMPLATE.format(workspace_root=workspace_root, tool_names=", ".join(tool_names))
+    if skill_catalog:
+        lines = [
+            "",
+            "Available skills, distinct from tools. The user enables them with the /skill picker:",
+        ]
+        lines.extend(f"- {name}: {desc}" for name, desc in skill_catalog)
+        text += "\n" + "\n".join(lines)
+    if active_skills:
+        parts = ["", "## Active skills"]
+        for name, body in active_skills:
+            parts.append(f"### {name}\n{body}")
+        text += "\n" + "\n".join(parts)
+    return text

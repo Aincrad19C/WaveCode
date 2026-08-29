@@ -48,6 +48,49 @@ def test_relpath(tmp_path: Path) -> None:
     assert ws.relpath(tmp_path / "sub" / "f.py") == "sub/f.py"
 
 
+def test_undo_restores_edits_and_deletes_new_files(tmp_path: Path) -> None:
+    ws = Workspace(tmp_path)
+    old = tmp_path / "keep.py"
+    old.write_text("v1\n", encoding="utf-8")
+    ws.mark_new_task()
+    ws.remember(old)
+    old.write_text("v2\n", encoding="utf-8")
+    created = tmp_path / "new.py"
+    ws.remember(created)
+    created.write_text("fresh\n", encoding="utf-8")
+    assert ws.restore_task_files() == ["keep.py", "new.py"]
+    assert old.read_text(encoding="utf-8") == "v1\n"
+    assert not created.exists()
+    assert ws.restore_task_files() == []
+
+
+def test_undo_window_survives_task_without_writes(tmp_path: Path) -> None:
+    ws = Workspace(tmp_path)
+    path = tmp_path / "a.py"
+    path.write_text("one\n", encoding="utf-8")
+    ws.mark_new_task()
+    ws.remember(path)
+    path.write_text("two\n", encoding="utf-8")
+    ws.mark_new_task()
+    assert path.read_text(encoding="utf-8") == "two\n"
+    assert ws.restore_task_files() == ["a.py"]
+    assert path.read_text(encoding="utf-8") == "one\n"
+
+
+def test_first_write_of_new_task_drops_previous_undo(tmp_path: Path) -> None:
+    ws = Workspace(tmp_path)
+    path = tmp_path / "a.py"
+    path.write_text("one\n", encoding="utf-8")
+    ws.mark_new_task()
+    ws.remember(path)
+    path.write_text("two\n", encoding="utf-8")
+    ws.mark_new_task()
+    ws.remember(path)
+    path.write_text("three\n", encoding="utf-8")
+    assert ws.restore_task_files() == ["a.py"]
+    assert path.read_text(encoding="utf-8") == "two\n"
+
+
 def test_cwd_starts_at_root_and_can_leave(tmp_path: Path) -> None:
     ws = Workspace(tmp_path)
     assert ws.cwd == tmp_path.resolve()

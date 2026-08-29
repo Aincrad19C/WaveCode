@@ -8,7 +8,7 @@
 2. **工具结果永远回灌**，即使失败。否则模型无法纠错。
 3. **有 tool_calls 时本轮没有最终答案**。即使同时带了一段 `content`（旁白），也只展示给用户，然后继续循环。
 4. **循环自己决定何时停**，不把控制权交给模型厂商的 agent runtime。
-5. **一轮 = 一次 LLM 调用 + 0..N 次工具**。不要在没有新模型反馈时连续执行两批工具。
+5. **一轮 = 一次面向用户任务的 LLM 调用 + 0..N 次工具。** 不要在没有新模型反馈时连续执行两批工具。压缩阶段的摘要 complete（04 §4.2）**不是**一轮：不计 `turn`、不带 tools。
 
 ## 2. 状态机
 
@@ -65,6 +65,7 @@ def run(self, user_text: str) -> str:
 
             schemas = self.registry.schemas()
             messages, est, note = self.context.build_request_messages(schemas)
+            # 此处 compact 可能先做一次无工具摘要 complete（不计 turn；见 04 §4.2）
             state.estimated_prompt_tokens = est
             if note:
                 self.sink.on_event(ContextCompacted(...))
@@ -181,7 +182,9 @@ def run(self, user_text: str) -> str:
 
 ## 5. 与 thinking 模式
 
-`thinking_enabled=False`（默认）：请求带 `"thinking": {"type": "disabled"}`，避免默认 thinking 浪费延迟。
+仅当 `llm/catalog.py` 判定当前模型支持 thinking 时才写入请求体。不支持的模型省略 `thinking` 字段，Loop 视 `thinking_enabled=False`，HUD 不画开关。
+
+`thinking_enabled=False`（默认，且模型支持）：请求带 `"thinking": {"type": "disabled"}`，避免默认 thinking 浪费延迟。
 
 `thinking_enabled=True`：
 

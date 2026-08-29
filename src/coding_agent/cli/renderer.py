@@ -130,6 +130,7 @@ class TuiEventSink:
         get_sidebar().begin_turn()
 
     def _on_LLMRequestStarted(self, event: LLMRequestStarted) -> None:
+        get_bank().set_pose("think")
         self.view.set_status(f"{GLYPH_WAVE} {PRODUCT_NAME} 思考中…")
 
     def _on_ToolCallScheduled(self, event: ToolCallScheduled) -> None:

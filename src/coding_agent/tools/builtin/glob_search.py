@@ -11,12 +11,20 @@ from coding_agent.tools.base import Tool, ToolContext
 
 class GlobSearchTool(Tool):
     name = "glob_search"
-    description = "Find files by glob pattern relative to the workspace root, e.g. '**/*.py'."
+    description = (
+        "Find files by glob pattern relative to the workspace root. Example: **/*.py."
+    )
     parameters = {
         "type": "object",
         "properties": {
-            "pattern": {"type": "string", "description": "Glob pattern, e.g. '**/*.py'."},
-            "max_results": {"type": "integer", "description": "Cap on results (default 200)."},
+            "pattern": {
+                "type": "string",
+                "description": "Glob pattern relative to the workspace root. Example: **/*.py.",
+            },
+            "max_results": {
+                "type": "integer",
+                "description": "Maximum paths to return. Default 200.",
+            },
         },
         "required": ["pattern"],
     }

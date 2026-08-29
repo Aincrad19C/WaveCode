@@ -51,7 +51,7 @@ message：`上下文仍超出预算，请 /reset 或缩小任务。`
 if view.turn >= settings.max_turns: stop
 ```
 
-初始 `turn=0`，允许恰好 `max_turns` 次 LLM 调用。第 `max_turns` 次结束后 `turn==max_turns`，下一轮 evaluate 停止。
+初始 `turn=0`，允许恰好 `max_turns` 次 **面向任务的** LLM 调用（`LLMRequestStarted` 那次）。压缩摘要 complete 不计在内。
 
 若最后一轮产生了 tool_calls：会先执行工具（本轮已开始），然后 `continue` 到循环顶，evaluate 发现 max_turns → stop。  
 此时 **没有最终模型总结**。Loop 在因 max_turns 停下且 `final_text` 空时，应合成：
@@ -77,6 +77,6 @@ if view.turn >= settings.max_turns: stop
 
 ## 4. 单测
 
-- max_turns=2：FakeLLM 永远返回 tool_calls，断言恰好 2 次 LLM，随后 reason=max_turns。
+- max_turns=2：FakeLLM 永远返回 tool_calls，断言恰好 2 次 **带 tools 的** LLM，随后 reason=max_turns。摘要 complete 另计、不占这 2 次。
 - cancelled 在 turn 0 即停，0 次 LLM。
 - 自然完成不触发 max_turns。

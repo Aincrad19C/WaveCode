@@ -423,6 +423,16 @@ class WorkspaceSidebar:
             self._baseline = ()
             self._scanned_at = 0.0
 
+    def forget(self, paths: tuple[str, ...] | list[str]) -> None:
+        """Drop session notes for restored files so Changes matches the disk."""
+        rels = {path.replace("\\", "/").lstrip("./") for path in paths if path}
+        if not rels:
+            return
+        with self._lock:
+            for rel in rels:
+                self._session.pop(rel, None)
+            self._scanned_at = 0.0
+
     def note(self, path: str, code: str) -> None:
         rel = path.replace("\\", "/").lstrip("./")
         if not rel:

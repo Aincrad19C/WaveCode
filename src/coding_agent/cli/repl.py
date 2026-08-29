@@ -16,6 +16,7 @@ from coding_agent.cli.commands import dispatch_slash
 from coding_agent.cli.sprites.pack import ensure_user_packs
 from coding_agent.cli.theme import UI_CYAN, UI_ICE
 from coding_agent.config.settings import Settings
+from coding_agent.skills.pack import ensure_user_skills
 
 
 class Repl:
@@ -25,7 +26,8 @@ class Repl:
         self.settings = settings
 
     def run(self) -> int:
-        ensure_user_packs()
+        ensure_user_packs(workdir=self.settings.workdir)
+        ensure_user_skills()
         self.session.start()
         while True:
             try:
@@ -70,7 +72,7 @@ class Repl:
         if outcome.quit:
             self._farewell()
             return True
-        if outcome.kind in ("help", "tools", "status"):
+        if outcome.kind in ("help", "tools", "status", "pick"):
             border = UI_CYAN if outcome.kind == "help" else UI_ICE
             self.console.print(
                 ocean_panel(outcome.body, title=outcome.title or outcome.kind, border=border)

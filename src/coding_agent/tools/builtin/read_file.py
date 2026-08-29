@@ -15,13 +15,17 @@ BIG_FILE_BYTES = 2 * 1024 * 1024
 
 class ReadFileTool(Tool):
     name = "read_file"
-    description = "Read a UTF-8 text file from the workspace. Use offset/limit for large files."
+    description = (
+        "Read a UTF-8 text file from the workspace. Paths are relative to the workspace root. "
+        "For large files set offset to the 1-based starting line and limit to the number of lines. "
+        "Default limit is 400."
+    )
     parameters = {
         "type": "object",
         "properties": {
-            "path": {"type": "string", "description": "Path relative to the workspace root."},
+            "path": {"type": "string", "description": "Workspace-relative path."},
             "offset": {"type": "integer", "description": "1-based first line to read."},
-            "limit": {"type": "integer", "description": "Max lines to read (default 400)."},
+            "limit": {"type": "integer", "description": "Maximum lines to return. Default 400."},
         },
         "required": ["path"],
     }

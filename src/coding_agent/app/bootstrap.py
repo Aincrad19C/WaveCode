@@ -19,16 +19,23 @@ from coding_agent.app.system_prompt import build_system_prompt
 from coding_agent.config.settings import Settings
 from coding_agent.context.estimator import HeuristicTokenEstimator
 from coding_agent.context.manager import ContextManager
-from coding_agent.context.policy import TruncatingContextPolicy
+from coding_agent.context.policy import (
+    ContextPolicy,
+    SummarizingContextPolicy,
+    TruncatingContextPolicy,
+)
 from coding_agent.context.store import ConversationStore
 from coding_agent.domain.messages import ChatMessage, Role
 from coding_agent.domain.ports import EventSink, FanoutSink, NullSink
 from coding_agent.errors import ConfigError
+from coding_agent.llm.catalog import MODEL_ALIASES
 from coding_agent.llm.deepseek import DeepSeekClient
 from coding_agent.llm.retry import ExponentialBackoffRetry
+from coding_agent.llm.summarize import LlmConversationSummarizer
 from coding_agent.parsing.fallback import ContentFallbackParser
 from coding_agent.parsing.native import NativeToolCallParser
 from coding_agent.parsing.pipeline import ParserPipeline
+from coding_agent.skills.bank import reset_skills
 from coding_agent.termination.composite import AnyOfTermination
 from coding_agent.termination.conditions import (
     CancelledCondition,
@@ -44,13 +51,6 @@ from coding_agent.tools.registry import ToolRegistry
 from coding_agent.tools.workspace import Workspace
 
 logger = logging.getLogger(__name__)
-
-# Retired model ids are mapped instead of rejected (docs/10 §11).
-_MODEL_ALIASES = {
-    "deepseek-chat": ("deepseek-v4-flash", False),
-    "deepseek-reasoner": ("deepseek-v4-flash", True),
-}
-
 
 _PROXY_ENV_KEYS = (
     "ALL_PROXY",
@@ -101,7 +101,7 @@ def _http_proxy_from_socks_env() -> str | None:
 def load_settings() -> Settings:
     load_dotenv()  # does not override already-exported environment variables
     settings = Settings()
-    if alias := _MODEL_ALIASES.get(settings.deepseek_model):
+    if alias := MODEL_ALIASES.get(settings.deepseek_model):
         model, force_thinking = alias
         logger.warning(
             "model %s is retired; using %s instead", settings.deepseek_model, model
@@ -137,15 +137,33 @@ def build_session(settings: Settings, sinks: list[EventSink] | None = None) -> A
 
     estimator = HeuristicTokenEstimator()
     send_budget = settings.max_context_tokens - settings.completion_reserve_tokens
-    policy = TruncatingContextPolicy(
+    truncating = TruncatingContextPolicy(
         send_budget=send_budget,
         tool_output_max_chars=settings.tool_output_max_chars,
         estimator=estimator,
     )
+    llm = DeepSeekClient(
+        api_key=settings.deepseek_api_key,
+        base_url=settings.deepseek_base_url,
+        model=settings.deepseek_model,
+        retry=ExponentialBackoffRetry(),
+        http=build_http_client(settings.http_timeout_s),
+    )
+    policy: ContextPolicy = truncating
+    if settings.summarize_context:
+        policy = SummarizingContextPolicy(
+            inner=truncating,
+            summarizer=LlmConversationSummarizer(llm, model=settings.deepseek_model),
+        )
+    skills = reset_skills()
+    skills.set_workdir(workspace.root)
     system = ChatMessage(
         role=Role.SYSTEM,
         content=build_system_prompt(
-            workspace_root=str(workspace.root), tool_names=registry.names()
+            workspace_root=str(workspace.root),
+            tool_names=registry.names(),
+            skill_catalog=skills.catalog(),
+            active_skills=skills.active_bodies(),
         ),
     )
     context = ContextManager(
@@ -165,14 +183,6 @@ def build_session(settings: Settings, sinks: list[EventSink] | None = None) -> A
             MaxTurnsCondition(settings.max_turns),
             NaturalCompletionCondition(),
         ]
-    )
-
-    llm = DeepSeekClient(
-        api_key=settings.deepseek_api_key,
-        base_url=settings.deepseek_base_url,
-        model=settings.deepseek_model,
-        retry=ExponentialBackoffRetry(),
-        http=build_http_client(settings.http_timeout_s),
     )
 
     loop = AgentLoop(

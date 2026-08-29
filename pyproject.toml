@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "wavecode"
-version = "2.13.2"
+version = "2.22.0"
 description = "WaveCode: a from-scratch CLI coding agent"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -37,7 +37,7 @@ coding-agent = "coding_agent.cli.app:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-coding_agent = ["py.typed", "cli/sprites/packs/**/*"]
+coding_agent = ["py.typed", "cli/sprites/packs/**/*", "skills/packs/**/*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src", "tests"]

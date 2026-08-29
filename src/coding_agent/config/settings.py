@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     parallel_readonly_tools: bool = False
     log_dir: Path = Path(f"{PRODUCT_DIRNAME}/logs")
     ascii_fallback: bool = Field(default=False, validation_alias="WAVEMIO_ASCII")
+    summarize_context: bool = True
     debug: bool = False
 
     def __str__(self) -> str:  # never leak the key

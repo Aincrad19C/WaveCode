@@ -13,14 +13,26 @@ from coding_agent.tools.base import Tool, ToolContext
 
 class GrepTool(Tool):
     name = "grep"
-    description = "Search file contents with a Python regex. Output: path:line_no:line."
+    description = (
+        "Search UTF-8 file contents with a Python regular expression. "
+        "Each match is path:line_number:line."
+    )
     parameters = {
         "type": "object",
         "properties": {
             "pattern": {"type": "string", "description": "Python regular expression."},
-            "path": {"type": "string", "description": "File or directory to search (default '.')."},
-            "flags": {"type": "string", "description": "Optional flags: 'i' = ignore case."},
-            "max_matches": {"type": "integer", "description": "Cap on matches (default 50)."},
+            "path": {
+                "type": "string",
+                "description": "File or directory to search. Default is the workspace root.",
+            },
+            "flags": {
+                "type": "string",
+                "description": "Set to i for case-insensitive matching.",
+            },
+            "max_matches": {
+                "type": "integer",
+                "description": "Maximum matches to return. Default 50.",
+            },
         },
         "required": ["pattern"],
     }

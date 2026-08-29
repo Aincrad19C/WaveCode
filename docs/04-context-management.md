@@ -70,15 +70,13 @@ else: compact until cost <= send_budget or 不能再压
 
 从 **最新块向前** 累积，直到加入下一块会超过 `send_budget - estimate_tools`。
 
-被丢掉的旧块用 **一条** 合成 user 消息替换（插在 system 之后、保留区之前）：
+被丢掉的旧块用 **一条** 合成 user 消息替换（插在 system 之后、保留区之前）。默认走 **§4.2 模型摘要**；摘要失败时回退下面的原文摘录（V1 的 `TruncatingContextPolicy._omission_summary`，仍保留作兜底）：
 
 ```
 [context compacted] Older turns were omitted. Summary of omitted user tasks:
 - <每条被省略的 user 原文截到 200 字>
 Files already edited in omitted turns may exist on disk; use list_dir/grep rather than assuming memory.
 ```
-
-不要用模型摘要（V1 无 SummarizingPolicy）。
 
 **阶段 3 — 保底**
 
@@ -88,6 +86,53 @@ Files already edited in omitted turns may exist on disk; use list_dir/grep rathe
 2. 最近 1 个完整块（即使它单独超预算，也只做阶段 1 截断，绝不删当前未完成的 tool 块）
 
 若最近一块截断后仍大于 budget：照样发送，并 set note=`"prompt_may_exceed_budget"`。
+
+## 4.2 `SummarizingContextPolicy`（默认接线）
+
+超预算时不只列用户原句，而用 **一次额外的、无工具的 LLM 调用** 把丢掉的旧轮次收成一段备忘，行为接近 Cursor 的 conversation summary：后面的模型仍看得见目标、改过的文件、坑和未完成项，却不必重放整段 tool 日志。
+
+**组合方式：** 先跑与 §4 完全相同的阶段 0–1 与滑动窗口（可内嵌 `TruncatingContextPolicy` 算出 `dropped` / `kept`）。有 `dropped` 时再摘要；没有丢掉的块则只截断大文本，不打模型。
+
+**插入位置：** 仍是 `system` 之后、保留区之前 **一条** `role=user` 消息。新头：
+
+```
+[context compacted] Summary of omitted turns:
+<模型写出的备忘>
+Files already edited in omitted turns may exist on disk; use list_dir/grep rather than assuming memory.
+```
+
+若 `dropped` 里已有上一次带 `[context compacted]` 头的 user 消息，把它整段当作 `previous_summary` 交给摘要器，**不要**再当普通 user 任务摘 200 字。滚动摘要：旧备忘 + 新丢掉的轮次 → 一条新备忘。
+
+**`ConversationSummarizer` 端口**（`context/summarizer.py`，domain 不 import `DeepSeekClient`）：
+
+```python
+class ConversationSummarizer(Protocol):
+    def summarize(
+        self,
+        *,
+        dropped: Sequence[ChatMessage],
+        previous_summary: str | None,
+    ) -> str:
+        """纯文本备忘。失败抛 LLMError / ValueError，由 policy 回退原文摘录。"""
+```
+
+`LlmConversationSummarizer`（`llm/summarize.py` 或 `app/`）：`LLMClient.complete`，**禁止** `tools`、**禁止** stream、**禁止** thinking。`max_tokens` 512。用独立的短 system（不是 agent 那条）：
+
+```
+You compress dropped coding-agent turns into a brief memo for a later model call.
+Include: user goals, files touched, key decisions, errors, remaining work.
+Do not invent files or commands. Plain text, at most 400 words. No markdown tables.
+```
+
+送给摘要模型的 user 正文：每条 dropped 消息先截到 1500 字，合计最多 24000 字；带上 `previous_summary`（若有）。
+
+**不是一轮。** 这次 complete **不**增加 `LoopState.turn`、**不**走 Parser、**不**执行工具、**不**记 `consecutive_llm_failures`。用户取消则与主循环一样变成 `CancelledError`。
+
+**失败回退（必须）：** 摘要调用抛错、空串、或超时 → 用 §4 的 `_omission_summary`，`ContextCompacted.note` 含 `summary_fallback`。成功则 note 含 `summarized N block(s)`。主任务不得因为摘要失败而停。
+
+**开关：** `Settings.summarize_context`（环境变量 `WAVEMIO_SUMMARIZE_CONTEXT`，默认 `true`）。`false` 时 bootstrap 只接 `TruncatingContextPolicy`（行为与改前一致，便于离线演示）。
+
+**单测：** Fake summarizer 的固定全文出现在 `compacted[1]`；summarizer 抛错则出现 `OMITTED_HEADER`；第二次 compact 把第一次备忘折进 `previous_summary`；`test_loop` 断言摘要 complete 次数不计入 `max_turns`。
 
 ## 5. 校准
 
@@ -109,7 +154,8 @@ system **只存一条**，在 `ConversationStore` 构造时写入，来自 `app/
 
 ## 7. `/reset` 与新任务
 
-- `/reset`：`store.reset_keeping_system()`，UI 播放重置动画。
+- `/reset`：`store.reset_keeping_system()`，UI 播放重置动画。已装载的 skill 仍在 system 里（13）。工作区文件与 `/undo` 窗口都不清。
+- `/undo`：只还原本任务 `write_file` / `edit_file` 的磁盘改动，不清对话（见 05 §1.1）。
 - one-shot：进程级一个 Session，结束即退出。
 - REPL 连续提问：不 reset。用户说「新任务」时模型仍看得见旧文件——这是 coding agent 的正确行为。
 
@@ -118,4 +164,5 @@ system **只存一条**，在 `ConversationStore` 构造时写入，来自 `app/
 - 超长 tool 结果被截断且含 `truncated by agent`。
 - assistant+tools 块不会在中间切断（断言 compact 后若存在某 tool_call_id，其 assistant 也在）。
 - system 永远 index 0。
-- 省略摘要出现在 system 之后。
+- 省略摘要或模型备忘出现在 system 之后。
+- `SummarizingContextPolicy`：Fake summarizer 的文本在 `compacted[1]`；抛错则 `OMITTED_HEADER`；滚动摘要折入 `previous_summary`。

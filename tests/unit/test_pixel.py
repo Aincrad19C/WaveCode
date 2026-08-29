@@ -84,8 +84,29 @@ def test_ensure_user_packs_writes_howto(tmp_path) -> None:
     text = readme.read_text(encoding="utf-8")
     assert "~/.wavecode/mascots" in text
     assert "idle.gif" in text
+    assert "把整个文件夹放到这里" in text
+    assert "/mascot <包名>" not in text
+    assert "内置" not in text
+    assert (dest / "default" / "idle.gif").is_file()
+    assert (dest / "default" / "think.gif").is_file()
     ensure_user_packs(home=tmp_path)
     assert readme.read_text(encoding="utf-8") == text
+
+
+def test_ensure_user_packs_seeds_workspace_and_keeps_edits(tmp_path) -> None:
+    from coding_agent.cli.sprites.pack import ensure_user_packs
+
+    home = tmp_path / "home"
+    work = tmp_path / "proj"
+    ensure_user_packs(home=home, workdir=work)
+    ws_idle = work / ".wavecode" / "mascots" / "default" / "idle.gif"
+    home_idle = home / ".wavecode" / "mascots" / "default" / "idle.gif"
+    assert ws_idle.is_file()
+    assert home_idle.is_file()
+    marker = b"custom-idle"
+    ws_idle.write_bytes(marker)
+    ensure_user_packs(home=home, workdir=work)
+    assert ws_idle.read_bytes() == marker
 
 
 def test_wavecode_pack_overrides_legacy_wavemio(tmp_path) -> None:
@@ -115,7 +136,7 @@ def test_workspace_pack_overrides_and_falls_back_pose(tmp_path) -> None:
     assert packs["blob"] == root
     bank = MascotBank()
     bank.set_workdir(tmp_path)
-    kind, body = bank.apply("blob")
+    kind, body = bank.select("blob")
     assert kind == "note"
     assert "blob" in body
     pixel = bank.grid()[0][0]
@@ -175,7 +196,7 @@ def test_png_only_pack_without_palette(tmp_path) -> None:
     assert poses["think"] is poses["idle"]
     bank = MascotBank()
     bank.set_workdir(tmp_path)
-    bank.apply("pngpet")
+    bank.select("pngpet")
     bank.set_pose("ok")
     assert bank.grid()[0][1][:3] == (0, 255, 0)
 
