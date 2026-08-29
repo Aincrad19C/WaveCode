@@ -72,7 +72,9 @@ jobs:
       - name: Install wheel
         run: |
           pip install dist/*.whl
+          wavecode --version
           wavemio --version
+          python -c "from importlib.resources import files; assert (files('coding_agent.cli.sprites.packs') / 'default' / 'idle.gif').is_file()"
       - uses: actions/upload-artifact@v4
         with:
           name: dist

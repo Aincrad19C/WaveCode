@@ -8,7 +8,14 @@ from pathlib import Path
 from rich.text import Text
 
 from coding_agent.cli.pixel import PixelGrid, render_halfblock
-from coding_agent.cli.sprites.pack import POSES, PoseClip, discover_packs, load_pack, pack_origin
+from coding_agent.cli.sprites.pack import (
+    POSES,
+    PoseClip,
+    discover_packs,
+    load_pack,
+    pack_origin,
+    user_home_packs,
+)
 
 _USAGE = "用法：/mascot  或  /mascot 包名"
 
@@ -53,6 +60,10 @@ class MascotBank:
         self._ensure()
         lines = [
             f"当前  {self.pack_name}",
+            "",
+            f"投放目录  {user_home_packs()}",
+            "把含 idle.gif / idle.png / idle.txt 的文件夹放进去，然后 /mascot 包名。",
+            "工作区也可用  <工作区>/.wavecode/mascots/<包名>/",
             "",
             "包：",
         ]

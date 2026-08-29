@@ -8,6 +8,14 @@ from pathlib import Path
 from coding_agent.cli.pixel import PixelGrid, parse_grid
 from coding_agent.cli.sprites.gifdec import load_gif
 from coding_agent.cli.sprites.png import load_png
+from coding_agent.config.paths import (
+    MASCOTS,
+    PRODUCT_DIRNAME,
+    extra_mascot_roots,
+    legacy_user_mascot_dir,
+    user_mascot_dir,
+    workspace_mascot_dir,
+)
 
 POSES = ("idle", "think", "tool", "ok", "err")
 SPRITE_SIZE = 32
@@ -31,25 +39,18 @@ class PoseClip:
 
 
 def user_home_packs() -> Path:
-    return Path.home() / ".wavemio" / "mascots"
+    return user_mascot_dir()
 
 
 def workspace_packs(workdir: Path | None) -> Path | None:
-    if workdir is None:
-        return None
-    return Path(workdir) / ".wavemio" / "mascots"
+    return workspace_mascot_dir(workdir)
 
 
 def discover_packs(
     workdir: Path | None = None, *, include_user: bool = True
 ) -> dict[str, Path]:
     """Return pack name → directory. Later roots override the same name."""
-    roots: list[Path] = [BUILTIN_PACKS]
-    if include_user:
-        roots.append(user_home_packs())
-        ws = workspace_packs(workdir)
-        if ws is not None:
-            roots.append(ws)
+    roots: list[Path] = [BUILTIN_PACKS, *extra_mascot_roots(workdir, include_user=include_user)]
     found: dict[str, Path] = {}
     for root in roots:
         if not root.is_dir():
@@ -62,6 +63,18 @@ def discover_packs(
             if _pose_file(child, "idle") is not None:
                 found[child.name] = child
     return found
+
+
+def ensure_user_packs(*, home: Path | None = None) -> Path:
+    """Create ``~/.wavecode/mascots`` and drop a HOWTO so users can add packs."""
+    dest = (Path(home) / PRODUCT_DIRNAME / MASCOTS) if home is not None else user_mascot_dir()
+    dest.mkdir(parents=True, exist_ok=True)
+    readme = dest / "README.txt"
+    if not readme.is_file():
+        bundled = BUILTIN_PACKS / "README.txt"
+        if bundled.is_file():
+            readme.write_text(bundled.read_text(encoding="utf-8"), encoding="utf-8")
+    return dest
 
 
 def parse_palette(text: str) -> dict[str, str]:
@@ -149,8 +162,10 @@ def pack_origin(path: Path) -> str:
         return "内置"
     except ValueError:
         pass
-    try:
-        resolved.relative_to(user_home_packs().resolve())
-        return "用户"
-    except ValueError:
-        return "工作区"
+    for home_root in (user_mascot_dir(), legacy_user_mascot_dir()):
+        try:
+            resolved.relative_to(home_root.resolve())
+            return "用户"
+        except ValueError:
+            continue
+    return "工作区"

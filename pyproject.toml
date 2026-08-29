@@ -3,8 +3,8 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "wavemio"
-version = "2.12.4"
+name = "wavecode"
+version = "2.13.0"
 description = "WaveCode: a from-scratch CLI coding agent"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -16,6 +16,9 @@ dependencies = [
   "rich>=13.7",
   "pygments>=2.18",
 ]
+
+[project.urls]
+Repository = "https://github.com/Aincrad19C/Coding_Agent"
 
 [project.optional-dependencies]
 dev = [

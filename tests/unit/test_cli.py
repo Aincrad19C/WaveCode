@@ -777,11 +777,13 @@ def test_dispatch_slash_mascot_lists_and_switches(tmp_path) -> None:
     listed = dispatch_slash("/mascot", session, settings)
     assert listed.kind == "status"
     assert "default" in listed.body
+    assert "投放目录" in listed.body
+    assert ".wavecode/mascots" in listed.body
     assert "动作" not in listed.body
     assert dispatch_slash("/mascot think", session, settings).kind == "warn"
     assert get_bank().pose == "idle"
     assert dispatch_slash("/mascot nope", session, settings).kind == "warn"
-    pack = tmp_path / ".wavemio" / "mascots" / "blob"
+    pack = tmp_path / ".wavecode" / "mascots" / "blob"
     pack.mkdir(parents=True)
     (pack / "palette.txt").write_text("k=#FF0000\n", encoding="utf-8")
     (pack / "idle.txt").write_text(("k" * 32 + "\n") + ("." * 32 + "\n") * 31, encoding="utf-8")

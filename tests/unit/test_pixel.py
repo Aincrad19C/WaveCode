@@ -67,6 +67,42 @@ def test_default_pack_maps_gif_poses() -> None:
     assert poses["err"].frames[0] != poses["idle"].frames[0]
 
 
+def test_builtin_pack_gif_is_package_data() -> None:
+    from importlib.resources import files
+
+    idle = files("coding_agent.cli.sprites.packs").joinpath("default", "idle.gif")
+    assert idle.is_file()
+
+
+def test_ensure_user_packs_writes_howto(tmp_path) -> None:
+    from coding_agent.cli.sprites.pack import ensure_user_packs
+
+    dest = ensure_user_packs(home=tmp_path)
+    assert dest == tmp_path / ".wavecode" / "mascots"
+    readme = dest / "README.txt"
+    assert readme.is_file()
+    text = readme.read_text(encoding="utf-8")
+    assert "~/.wavecode/mascots" in text
+    assert "idle.gif" in text
+    ensure_user_packs(home=tmp_path)
+    assert readme.read_text(encoding="utf-8") == text
+
+
+def test_wavecode_pack_overrides_legacy_wavemio(tmp_path) -> None:
+    from coding_agent.cli.sprites.pack import discover_packs
+
+    legacy = tmp_path / ".wavemio" / "mascots" / "blob"
+    current = tmp_path / ".wavecode" / "mascots" / "blob"
+    legacy.mkdir(parents=True)
+    current.mkdir(parents=True)
+    (legacy / "idle.txt").write_text(("k" * 32 + "\n") + ("." * 32 + "\n") * 31, encoding="utf-8")
+    (legacy / "palette.txt").write_text("k=#FF0000\n", encoding="utf-8")
+    (current / "idle.txt").write_text(("k" * 32 + "\n") + ("." * 32 + "\n") * 31, encoding="utf-8")
+    (current / "palette.txt").write_text("k=#00FF00\n", encoding="utf-8")
+    packs = discover_packs(tmp_path)
+    assert packs["blob"] == current
+
+
 def test_workspace_pack_overrides_and_falls_back_pose(tmp_path) -> None:
     from coding_agent.cli.sprites.bank import MascotBank
     from coding_agent.cli.sprites.pack import discover_packs

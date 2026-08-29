@@ -15,7 +15,7 @@ HELP_TEXT = f"""斜杠命令：
   /tools         列出工具 schema 名与说明
   /status        工作区、模型、轮次、token 估计
   /think on|off  切换 thinking 模式
-  /mascot        列出立绘包
+  /mascot        列出立绘包与投放目录
   /mascot 包名   切换立绘包
   /vim [路径]    用外部 vim / $EDITOR 打开
   /quit /exit /q 退出

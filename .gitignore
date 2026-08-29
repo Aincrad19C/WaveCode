@@ -1,6 +1,7 @@
 .env
 .env.*
 !.env.example
+.wavecode/
 .wavemio/
 .coding_agent/
 __pycache__/

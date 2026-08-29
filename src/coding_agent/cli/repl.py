@@ -10,13 +10,12 @@ from rich.console import Console
 from rich.text import Text
 
 from coding_agent.agent.session import AgentSession
-from coding_agent.cli.branding import CLI_NAME, GLYPH_WAVE, PRODUCT_NAME
+from coding_agent.cli.branding import GLYPH_WAVE, PRODUCT_NAME, PROMPT
 from coding_agent.cli.chrome import ocean_panel, wave_strip
 from coding_agent.cli.commands import dispatch_slash
+from coding_agent.cli.sprites.pack import ensure_user_packs
 from coding_agent.cli.theme import UI_CYAN, UI_ICE
 from coding_agent.config.settings import Settings
-
-PROMPT = f"{GLYPH_WAVE} {CLI_NAME} › "
 
 
 class Repl:
@@ -26,6 +25,7 @@ class Repl:
         self.settings = settings
 
     def run(self) -> int:
+        ensure_user_packs()
         self.session.start()
         while True:
             try:

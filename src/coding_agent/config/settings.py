@@ -11,6 +11,8 @@ from pathlib import Path
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from coding_agent.config.paths import PRODUCT_DIRNAME
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -45,7 +47,7 @@ class Settings(BaseSettings):
     bash_timeout_s: float = 60
     http_timeout_s: float = 120
     parallel_readonly_tools: bool = False
-    log_dir: Path = Path(".wavemio/logs")
+    log_dir: Path = Path(f"{PRODUCT_DIRNAME}/logs")
     ascii_fallback: bool = Field(default=False, validation_alias="WAVEMIO_ASCII")
     debug: bool = False
 

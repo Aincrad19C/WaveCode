@@ -12,7 +12,16 @@ from coding_agent.tools.builtin.read_file import ReadFileTool
 from coding_agent.tools.builtin.write_file import WriteFileTool
 
 IGNORED_DIRS = frozenset(
-    {".git", ".wavemio", ".coding_agent", "__pycache__", "node_modules", ".venv", "venv"}
+    {
+        ".git",
+        ".wavecode",
+        ".wavemio",
+        ".coding_agent",
+        "__pycache__",
+        "node_modules",
+        ".venv",
+        "venv",
+    }
 )
 
 

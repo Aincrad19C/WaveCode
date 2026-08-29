@@ -17,9 +17,26 @@ CLI 为全屏独占聊天界面（备用屏幕，像 `top`）：启动动画结�
 
 ## 安装
 
+从源码：
+
 ```bash
+pip install .
+# 开发：
 pip install -e ".[dev]"
 ```
+
+打成 wheel 再装：
+
+```bash
+python -m build
+pip install dist/wavecode-*.whl
+```
+
+## 自定义立绘
+
+把一个文件夹放到 **`~/.wavecode/mascots/<包名>/`**，里面至少要有 `idle.gif`（或 `idle.png` / `idle.txt`）。启动全屏或 REPL 时会自动创建该目录并写入说明。工作区也可以用 `<工作区>/.wavecode/mascots/`。仍识别旧的 `.wavemio/mascots`。
+
+`/mascot` 列出可用包和投放目录，`/mascot 包名` 切换。
 
 ## 配置密钥（不要提交进仓库）
 
@@ -43,7 +60,7 @@ wavecode --workdir /path --max-turns 10 --think run "..."
 `wavemio` 仍是同一入口的别名。
 
 REPL 斜杠命令：`/help` `/reset` `/tools` `/status` `/think on|off` `/mascot` `/vim` `/quit`。Enter 发送，行末 `\` 续行。Tab 在输入、文件、Changes 之间循环；F1 / F2 / Ctrl+T 切换对话与文本标签。
-会话日志写入 `<workdir>/.wavemio/logs/<timestamp>.jsonl`（已 gitignore）。
+会话日志写入 `<workdir>/.wavecode/logs/<timestamp>.jsonl`（已 gitignore）。
 
 ## 开发与测试
 

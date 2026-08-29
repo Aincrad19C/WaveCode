@@ -31,7 +31,7 @@ from coding_agent.cli.boot import (
     boot_panel,
     reveal_from_left,
 )
-from coding_agent.cli.branding import CLI_NAME, GLYPH_FLOW, GLYPH_WAVE, PRODUCT_NAME
+from coding_agent.cli.branding import GLYPH_FLOW, GLYPH_WAVE, PRODUCT_NAME, PROMPT
 from coding_agent.cli.chrome import (
     WorkspaceChrome,
     cute_title,
@@ -48,7 +48,7 @@ from coding_agent.cli.handoff import file_open_argv
 from coding_agent.cli.hub import TAB_LABELS, TABS, get_hub
 from coding_agent.cli.sidebar import get_sidebar
 from coding_agent.cli.sprites.bank import get_bank
-from coding_agent.cli.sprites.pack import SPRITE_SIZE
+from coding_agent.cli.sprites.pack import SPRITE_SIZE, ensure_user_packs
 from coding_agent.cli.theme import (
     UI_CYAN,
     UI_DEEP,
@@ -61,7 +61,6 @@ from coding_agent.cli.theme import (
 from coding_agent.cli.view import ChatItem, ChatView, ViewSnapshot
 from coding_agent.config.settings import Settings
 
-PROMPT = f"{GLYPH_WAVE} {CLI_NAME} › "
 _SPIN = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 _MASCOT_WIDTH = 34
 _SPRITE_ROWS = SPRITE_SIZE // 2  # half-block rows
@@ -746,6 +745,7 @@ class OceanTui:
         self._nav = NavKeys()
 
     def run(self) -> int:
+        ensure_user_packs()
         if self.console.size.width < 40:
             self.console.width = 80
         if self.console.size.height < 12:

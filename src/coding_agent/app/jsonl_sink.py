@@ -1,4 +1,4 @@
-"""JsonlLogSink: append every event to .wavemio/logs/<timestamp>.jsonl.
+"""JsonlLogSink: append every event to .wavecode/logs/<timestamp>.jsonl.
 
 Full, untruncated session record (docs/04 §2 layer 1). Never contains the
 API key: events simply do not carry credentials.
