@@ -354,7 +354,7 @@ class ScriptedLLM(LLMClient):
 - [ ] one-shot 能创建文件（工作区可见）
 - [ ] 模型 tool_calls 被执行，失败也会继续
 - [ ] Ctrl+C 取消
-- [ ] `/reset` `/help` `/skill` `/model` `/undo` `/quit` 工作
+- [ ] `/reset` `/help` `/skill` `/model` `/setting` `/undo` `/quit` 工作
 - [ ] `.wavemio/logs/*.jsonl` 产生
 - [ ] `bash` 子进程看不到 `DEEPSEEK_API_KEY`
 
@@ -389,7 +389,7 @@ class ScriptedLLM(LLMClient):
 | `skills/pack.py` | 发现与解析 SKILL.md，含发行 packs |
 | `skills/bank.py` | 本会话装载集合、`/skill` 文案 |
 | `tools/workspace.py` | 路径沙箱 + `/undo` 快照 |
-| `cli/picker.py` | `/skill` `/mascot` `/model` 全屏勾选列表 |
+| `cli/picker.py` | `/skill` `/mascot` `/model` `/setting` 全屏列表 |
 | `cli/app.py` | argparse + main() |
 | `cli/branding.py` | `PRODUCT_NAME = "Wavemio"`、`CLI_NAME = "wavemio"` |
 | `cli/pixel.py` | HalfBlockRenderer |

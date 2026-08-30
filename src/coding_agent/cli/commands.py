@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from coding_agent.agent.session import AgentSession
 from coding_agent.cli.branding import PRODUCT_NAME
+from coding_agent.cli.picker import CONTEXT_MAX, TURNS_MAX, TURNS_MIN, PickItem, context_min
 from coding_agent.cli.sidebar import get_sidebar
 from coding_agent.cli.sprites.bank import get_bank
 from coding_agent.config.settings import Settings
@@ -14,6 +16,11 @@ from coding_agent.skills.bank import get_skills
 
 _USAGE_MODEL = "请输入 /model 打开勾选列表。"
 _USAGE_THINK = "用法：/think on|off"
+_USAGE_SETTING = "请输入 /setting 打开设置。"
+_USAGE_SETTING_ARGS = (
+    "用法：/setting thinking on|off  /setting stream on|off  "
+    "/setting turns 数字  /setting context 数字"
+)
 
 
 def help_text(settings: Settings) -> str:
@@ -27,6 +34,7 @@ def help_text(settings: Settings) -> str:
   /tools         列出工具名称与说明
   /status        工作区、模型、轮次与 token 估计
   /model         打开模型勾选列表
+  /setting       打开设置
 {think_line}  /mascot        打开立绘包列表
   /skill         打开 skill 列表
   /vim 路径      用外部编辑器打开文件
@@ -88,10 +96,15 @@ def dispatch_slash(command: str, session: AgentSession, settings: Settings) -> S
                 return SlashOutcome(kind="warn", body="当前模型不支持 thinking。")
             if arg not in ("on", "off"):
                 return SlashOutcome(kind="warn", body=_USAGE_THINK)
-            enabled = arg == "on"
-            settings.thinking = enabled
-            session.loop.settings.thinking = enabled
-            return SlashOutcome(kind="note", body=f"thinking = {arg}")
+            kind, body = apply_runtime_settings(session, settings, thinking=arg == "on")
+            if kind == "note":
+                body = f"thinking = {arg}"
+            return SlashOutcome(kind=kind, body=body)
+        case "/setting":
+            if not arg.strip():
+                return SlashOutcome(kind="pick", title="setting", body=setting_list_text(settings))
+            kind, body = apply_setting_args(session, settings, arg)
+            return SlashOutcome(kind=kind, body=body)
         case "/model":
             if arg.strip():
                 return SlashOutcome(kind="warn", body=_USAGE_MODEL)
@@ -135,3 +148,107 @@ def _undo_files(session: AgentSession) -> SlashOutcome:
     listing = "、".join(paths[:12])
     extra = f" 等 {len(paths)} 个" if len(paths) > 12 else ""
     return SlashOutcome(kind="note", body=f"已还原 {listing}{extra}。")
+
+
+def setting_list_text(settings: Settings) -> str:
+    lines = ["当前", ""]
+    if supports_thinking(settings.deepseek_model):
+        mark = "✓" if settings.thinking else " "
+        lines.append(f"  [{mark}] thinking")
+    mark = "✓" if settings.stream else " "
+    lines.append(f"  [{mark}] 流式")
+    lines.append(f"  轮次     {settings.max_turns}")
+    lines.append(f"  上下文   {settings.max_context_tokens}")
+    return "\n".join(lines)
+
+
+def apply_setting_args(session: AgentSession, settings: Settings, arg: str) -> tuple[str, str]:
+    parts = arg.split()
+    if len(parts) != 2:
+        return "warn", _USAGE_SETTING_ARGS
+    key, raw = parts[0], parts[1]
+    if key in {"thinking", "think"}:
+        if raw not in {"on", "off"}:
+            return "warn", _USAGE_SETTING_ARGS
+        return apply_runtime_settings(session, settings, thinking=raw == "on")
+    if key in {"stream", "流式"}:
+        if raw not in {"on", "off"}:
+            return "warn", _USAGE_SETTING_ARGS
+        return apply_runtime_settings(session, settings, stream=raw == "on")
+    if key in {"turns", "轮次"}:
+        try:
+            n = int(raw)
+        except ValueError:
+            return "warn", _USAGE_SETTING_ARGS
+        return apply_runtime_settings(session, settings, max_turns=n)
+    if key in {"context", "上下文"}:
+        try:
+            n = int(raw)
+        except ValueError:
+            return "warn", _USAGE_SETTING_ARGS
+        return apply_runtime_settings(session, settings, max_context_tokens=n)
+    return "warn", _USAGE_SETTING_ARGS
+
+
+def apply_setting_items(
+    session: AgentSession, settings: Settings, items: Sequence[PickItem]
+) -> tuple[str, str]:
+    kwargs: dict[str, bool | int] = {}
+    for item in items:
+        if item.name == "thinking":
+            kwargs["thinking"] = item.detail == "on"
+        elif item.name == "stream":
+            kwargs["stream"] = item.detail == "on"
+        elif item.name == "turns":
+            kwargs["max_turns"] = int(item.detail)
+        elif item.name == "context":
+            kwargs["max_context_tokens"] = int(item.detail)
+    return apply_runtime_settings(session, settings, **kwargs)
+
+
+def apply_runtime_settings(
+    session: AgentSession,
+    settings: Settings,
+    *,
+    thinking: bool | None = None,
+    stream: bool | None = None,
+    max_turns: int | None = None,
+    max_context_tokens: int | None = None,
+) -> tuple[str, str]:
+    if thinking is True and not supports_thinking(settings.deepseek_model):
+        return "warn", "当前模型不支持 thinking。"
+    if max_turns is not None and not TURNS_MIN <= max_turns <= TURNS_MAX:
+        return "warn", f"轮次须在 {TURNS_MIN} 到 {TURNS_MAX} 之间。"
+    if max_context_tokens is not None:
+        low = context_min(settings.completion_reserve_tokens)
+        if not low <= max_context_tokens <= CONTEXT_MAX:
+            return "warn", f"上下文须在 {low} 到 {CONTEXT_MAX} 之间。"
+    loop = getattr(session, "loop", None)
+    loop_settings = getattr(loop, "settings", None)
+    changed: list[str] = []
+    if thinking is not None:
+        settings.thinking = thinking
+        if loop_settings is not None:
+            loop_settings.thinking = thinking
+        changed.append(f"thinking={'on' if thinking else 'off'}")
+    if stream is not None:
+        settings.stream = stream
+        if loop_settings is not None:
+            loop_settings.stream = stream
+        changed.append(f"流式={'on' if stream else 'off'}")
+    if max_turns is not None:
+        settings.max_turns = max_turns
+        if loop_settings is not None:
+            loop_settings.max_turns = max_turns
+        changed.append(f"轮次={max_turns}")
+    if max_context_tokens is not None:
+        settings.max_context_tokens = max_context_tokens
+        if loop_settings is not None:
+            loop_settings.max_context_tokens = max_context_tokens
+        changed.append(f"上下文={max_context_tokens}")
+    sync = getattr(loop, "sync_runtime_settings", None)
+    if callable(sync):
+        sync()
+    if not changed:
+        return "warn", _USAGE_SETTING
+    return "note", "已更新  " + "  ".join(changed)

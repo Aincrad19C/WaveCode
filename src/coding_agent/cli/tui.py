@@ -42,11 +42,17 @@ from coding_agent.cli.chrome import (
     wave_strip,
     workspace_hud,
 )
-from coding_agent.cli.commands import SlashOutcome, dispatch_slash
+from coding_agent.cli.commands import SlashOutcome, apply_setting_items, dispatch_slash
 from coding_agent.cli.editor import KeyAction, LineEditor, NavKeys, PickerKeys
 from coding_agent.cli.handoff import file_open_argv
 from coding_agent.cli.hub import TAB_LABELS, TABS, get_hub
-from coding_agent.cli.picker import mascot_picker, model_picker, render_picker, skill_picker
+from coding_agent.cli.picker import (
+    mascot_picker,
+    model_picker,
+    render_picker,
+    setting_picker,
+    skill_picker,
+)
 from coding_agent.cli.sidebar import get_sidebar
 from coding_agent.cli.sprites.bank import get_bank
 from coding_agent.cli.sprites.pack import SPRITE_SIZE, ensure_user_packs
@@ -918,6 +924,8 @@ class OceanTui:
                 self.view.move_picker(int(action.text or "0"))
             elif action.kind == "toggle":
                 self.view.toggle_picker()
+            elif action.kind == "nudge":
+                self.view.nudge_picker(int(action.text or "0"))
             elif action.kind == "confirm":
                 self._confirm_picker()
             elif action.kind == "cancel":
@@ -937,6 +945,9 @@ class OceanTui:
             llm = getattr(getattr(self.session, "loop", None), "llm", None)
             models = discover_models(llm, current=self.settings.deepseek_model)
             self.view.set_picker(model_picker(models, current=self.settings.deepseek_model))
+            return
+        if title == "setting":
+            self.view.set_picker(setting_picker(self.settings))
             return
         skills = get_skills()
         skills.set_workdir(self.settings.workdir)
@@ -962,6 +973,10 @@ class OceanTui:
                 self.view.append("error", "请输入 /model 打开勾选列表。")
                 return
             kind, body = apply_model(self.session, self.settings, names[0])
+            self.view.append("note" if kind != "warn" else "error", body)
+            return
+        if picker.kind == "setting":
+            kind, body = apply_setting_items(self.session, self.settings, picker.items)
             self.view.append("note" if kind != "warn" else "error", body)
             return
         skills = get_skills()

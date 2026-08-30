@@ -1,4 +1,4 @@
-"""Fullscreen checkbox / radio list for /skill, /mascot, and /model."""
+"""Fullscreen checkbox / radio list for /skill, /mascot, /model, and /setting."""
 
 from __future__ import annotations
 
@@ -12,8 +12,28 @@ from rich.text import Text
 
 from coding_agent.cli.sprites.bank import MascotBank
 from coding_agent.cli.theme import UI_CYAN, UI_FOAM, UI_ICE, UI_PRIMARY, UI_WARN
-from coding_agent.llm.catalog import ModelInfo
+from coding_agent.config.settings import Settings
+from coding_agent.llm.catalog import ModelInfo, supports_thinking
 from coding_agent.skills.bank import MAX_ACTIVE, SkillBank
+
+_SETTING_LABELS = {
+    "thinking": "thinking",
+    "stream": "流式",
+    "turns": "轮次",
+    "context": "上下文",
+}
+TURNS_MIN = 1
+TURNS_MAX = 999
+CONTEXT_MAX = 200_000
+CONTEXT_STEP = 1024
+
+
+def context_min(reserve: int) -> int:
+    return max(8192, reserve + 1024)
+
+
+def _clamp_int(value: int, low: int, high: int) -> int:
+    return max(low, min(high, value))
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,6 +54,7 @@ class PickState:
     warn: str = ""
     multi: bool = True
     max_checked: int = MAX_ACTIVE
+    context_low: int = 8192
 
     def moved(self, delta: int) -> PickState:
         n = len(self.items)
@@ -47,6 +68,15 @@ class PickState:
             return self
         idx = self.cursor
         current = self.items[idx]
+        if self.kind == "setting":
+            if current.name not in {"thinking", "stream"}:
+                return self
+            on = not current.checked
+            items = tuple(
+                replace(item, checked=on, detail="on" if on else "off") if i == idx else item
+                for i, item in enumerate(self.items)
+            )
+            return replace(self, items=items, warn="")
         if self.multi:
             if not current.checked:
                 n_on = sum(1 for item in self.items if item.checked)
@@ -63,6 +93,36 @@ class PickState:
             replace(item, checked=(i == idx)) for i, item in enumerate(self.items)
         )
         return replace(self, items=items, warn="")
+
+    def nudged(self, delta: int) -> PickState:
+        if self.kind != "setting" or not self.items or not delta:
+            return self
+        idx = self.cursor
+        current = self.items[idx]
+        if current.name in {"thinking", "stream"}:
+            on = delta > 0
+            items = tuple(
+                replace(item, checked=on, detail="on" if on else "off") if i == idx else item
+                for i, item in enumerate(self.items)
+            )
+            return replace(self, items=items, warn="")
+        if current.name == "turns":
+            n = _clamp_int(int(current.detail) + delta, TURNS_MIN, TURNS_MAX)
+            items = tuple(
+                replace(item, detail=str(n)) if i == idx else item
+                for i, item in enumerate(self.items)
+            )
+            return replace(self, items=items, warn="")
+        if current.name == "context":
+            n = _clamp_int(
+                int(current.detail) + delta * CONTEXT_STEP, self.context_low, CONTEXT_MAX
+            )
+            items = tuple(
+                replace(item, detail=str(n)) if i == idx else item
+                for i, item in enumerate(self.items)
+            )
+            return replace(self, items=items, warn="")
+        return self
 
     def checked_names(self) -> tuple[str, ...]:
         return tuple(item.name for item in self.items if item.checked)
@@ -118,6 +178,40 @@ def mascot_picker(bank: MascotBank) -> PickState:
     )
 
 
+def setting_picker(settings: Settings) -> PickState:
+    items: list[PickItem] = []
+    if supports_thinking(settings.deepseek_model):
+        items.append(
+            PickItem(
+                name="thinking",
+                detail="on" if settings.thinking else "off",
+                origin="",
+                checked=settings.thinking,
+            )
+        )
+    items.append(
+        PickItem(
+            name="stream",
+            detail="on" if settings.stream else "off",
+            origin="",
+            checked=settings.stream,
+        )
+    )
+    items.append(PickItem(name="turns", detail=str(settings.max_turns), origin="", checked=False))
+    items.append(
+        PickItem(name="context", detail=str(settings.max_context_tokens), origin="", checked=False)
+    )
+    return PickState(
+        kind="setting",
+        title="设置",
+        hint="空格切换  ← → 调节  Enter 确认  Esc 取消",
+        items=tuple(items),
+        multi=True,
+        max_checked=len(items),
+        context_low=context_min(settings.completion_reserve_tokens),
+    )
+
+
 def render_picker(state: PickState, width: int, height: int) -> RenderableType:
     inner_h = max(1, height - 2)
     inner_w = max(12, width - 4)
@@ -138,9 +232,13 @@ def render_picker(state: PickState, width: int, height: int) -> RenderableType:
         idx = start + i
         if i:
             lines.append("\n")
-        mark = "✓" if item.checked else " "
         pointer = "▸ " if idx == state.cursor else "  "
         style = UI_FOAM if idx == state.cursor else ""
+        if state.kind == "setting":
+            label = _SETTING_LABELS.get(item.name, item.name)
+            lines.append(f"{pointer}{label}  {item.detail}", style=style or UI_CYAN)
+            continue
+        mark = "✓" if item.checked else " "
         name = item.name[: max(4, inner_w - 18)]
         extra = ""
         if item.origin:

@@ -33,6 +33,7 @@ from coding_agent.llm.client import LLMClient
 from coding_agent.llm.types import FinishReason, ModelRequest, ModelResponse
 from coding_agent.parsing.base import OutputParser
 from coding_agent.termination.base import TerminationCondition
+from coding_agent.termination.conditions import ContextOverflowCondition, MaxTurnsCondition
 from coding_agent.tools.executor import ToolExecutor
 from coding_agent.tools.registry import ToolRegistry
 
@@ -63,6 +64,19 @@ class AgentLoop:
         self.sink = sink
         self.state = LoopState()
         self.last_end_reason: str = ""
+
+    def sync_runtime_settings(self) -> None:
+        """Copy live Settings into context budget and termination caps."""
+        send = max(1, self.settings.max_context_tokens - self.settings.completion_reserve_tokens)
+        setter = getattr(self.context, "set_send_budget", None)
+        if callable(setter):
+            setter(send)
+
+        for condition in getattr(self.termination, "_conditions", ()):
+            if isinstance(condition, MaxTurnsCondition):
+                condition.set_max(self.settings.max_turns)
+            elif isinstance(condition, ContextOverflowCondition):
+                condition.set_max(self.settings.max_context_tokens)
 
     def run(self, user_text: str) -> str:
         text = user_text.strip()

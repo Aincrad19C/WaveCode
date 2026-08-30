@@ -643,6 +643,12 @@ def test_picker_keys_toggle_confirm_cancel() -> None:
     assert keys.feed(b"\r")[0].kind == "confirm"
     assert keys.feed(b"\x1b")[0].kind == "cancel"
     assert keys.feed(b"q")[0].kind == "cancel"
+    assert keys.feed(b"l")[0] == keys.feed(b"+")[0]
+    assert keys.feed(b"h")[0].kind == "nudge"
+    assert keys.feed(b"h")[0].text == "-1"
+    assert keys.feed(b"\x1b[C")[0].kind == "nudge"
+    assert keys.feed(b"\x1b[C")[0].text == "1"
+    assert keys.feed(b"\x1b[D")[0].text == "-1"
 
 
 def test_pick_state_checkbox_and_radio() -> None:
@@ -666,6 +672,51 @@ def test_pick_state_checkbox_and_radio() -> None:
     radio = radio.moved(1).toggled()
     assert radio.checked_names() == ("blob",)
     assert radio.toggled().checked_names() == ("blob",)
+
+
+def test_setting_picker_toggle_and_nudge() -> None:
+    from dataclasses import replace
+    from io import StringIO
+
+    from rich.console import Console
+
+    from coding_agent.cli.picker import render_picker, setting_picker
+    from fakes.settings import make_settings
+
+    settings = make_settings(thinking=False, stream=True, max_turns=30, max_context_tokens=32000)
+    state = setting_picker(settings)
+    assert state.kind == "setting"
+    assert {item.name for item in state.items} >= {"thinking", "stream", "turns", "context"}
+    think = next(i for i, item in enumerate(state.items) if item.name == "thinking")
+    state = replace(state, cursor=think).toggled()
+    assert state.items[think].detail == "on"
+    turns = next(i for i, item in enumerate(state.items) if item.name == "turns")
+    unchanged = replace(state, cursor=turns).toggled()
+    assert unchanged.items[turns].detail == "30"
+    state = replace(state, cursor=turns).nudged(5)
+    assert state.items[turns].detail == "35"
+    ctx = next(i for i, item in enumerate(state.items) if item.name == "context")
+    state = replace(state, cursor=ctx).nudged(1)
+    assert state.items[ctx].detail == "33024"
+    hidden = setting_picker(make_settings(deepseek_model="other-chat"))
+    assert all(item.name != "thinking" for item in hidden.items)
+
+    buf = StringIO()
+    console = Console(
+        file=buf,
+        width=48,
+        height=16,
+        force_terminal=True,
+        color_system=None,
+        record=True,
+    )
+    console.print(render_picker(setting_picker(settings), 40, 12))
+    out = console.export_text()
+    assert "流式" in out
+    assert "轮次" in out
+    assert "空格切换" in out
+    assert "[✓]" not in out
+    assert "[ ]" not in out
 
 
 def test_tui_picker_overlay_lists_builtin_skills() -> None:
@@ -718,6 +769,7 @@ def test_dispatch_slash_help_and_quit() -> None:
     assert help_out.kind == "help"
     assert "/reset" in help_out.body
     assert "/model" in help_out.body
+    assert "/setting" in help_out.body
     assert "/think on|off" in help_out.body
     assert "/mascot" in help_out.body
     assert "打开立绘包列表" in help_out.body
@@ -849,6 +901,94 @@ def test_dispatch_slash_tools_status_think_reset() -> None:
     note = dispatch_slash("/think on", session, settings)
     assert note.body == "thinking = on"
     assert settings.thinking is True
+
+
+def test_dispatch_slash_setting_lists_and_applies(tmp_path) -> None:
+    from types import SimpleNamespace
+
+    from coding_agent.agent.state import LoopState
+    from coding_agent.cli.commands import dispatch_slash
+    from coding_agent.context.estimator import HeuristicTokenEstimator
+    from coding_agent.context.manager import ContextManager
+    from coding_agent.context.policy import TruncatingContextPolicy
+    from coding_agent.context.store import ConversationStore
+    from coding_agent.domain.messages import ChatMessage, Role
+    from coding_agent.termination.composite import AnyOfTermination
+    from coding_agent.termination.conditions import ContextOverflowCondition, MaxTurnsCondition
+    from fakes.settings import make_settings
+
+    settings = make_settings(workdir=tmp_path, max_turns=30, max_context_tokens=32000)
+    estimator = HeuristicTokenEstimator()
+    policy = TruncatingContextPolicy(
+        send_budget=27904, tool_output_max_chars=1000, estimator=estimator
+    )
+    context = ContextManager(
+        store=ConversationStore(ChatMessage(role=Role.SYSTEM, content="s")),
+        policy=policy,
+        estimator=estimator,
+        send_budget=27904,
+    )
+    turns = MaxTurnsCondition(30)
+    overflow = ContextOverflowCondition(32000)
+
+    def sync() -> None:
+        send = max(1, settings.max_context_tokens - settings.completion_reserve_tokens)
+        context.set_send_budget(send)
+        turns.set_max(settings.max_turns)
+        overflow.set_max(settings.max_context_tokens)
+
+    session = SimpleNamespace(
+        loop=SimpleNamespace(
+            state=LoopState(),
+            settings=settings,
+            context=context,
+            termination=AnyOfTermination([overflow, turns]),
+            sync_runtime_settings=sync,
+        )
+    )
+
+    listed = dispatch_slash("/setting", session, settings)
+    assert listed.kind == "pick"
+    assert listed.title == "setting"
+    assert "流式" in listed.body
+    assert "轮次" in listed.body
+    assert "上下文" in listed.body
+    assert "thinking" in listed.body
+    assert "发行" not in listed.body
+    other = make_settings(deepseek_model="other-chat")
+    hidden = dispatch_slash(
+        "/setting",
+        SimpleNamespace(loop=SimpleNamespace(state=LoopState(), settings=other)),
+        other,
+    )
+    assert "thinking" not in hidden.body
+    stream = dispatch_slash("/setting stream off", session, settings)
+    assert stream.kind == "note"
+    assert settings.stream is False
+    turns_out = dispatch_slash("/setting turns 40", session, settings)
+    assert turns_out.kind == "note"
+    assert settings.max_turns == 40
+    assert turns._max == 40
+    ctx = dispatch_slash("/setting context 48000", session, settings)
+    assert ctx.kind == "note"
+    assert settings.max_context_tokens == 48000
+    assert overflow._max == 48000
+    assert context._send_budget == 48000 - settings.completion_reserve_tokens
+    bad = dispatch_slash("/setting nope", session, settings)
+    assert bad.kind == "warn"
+    assert dispatch_slash("/setting context 100", session, settings).kind == "warn"
+    zh = dispatch_slash("/setting 轮次 12", session, settings)
+    assert zh.kind == "note"
+    assert settings.max_turns == 12
+    think = dispatch_slash("/setting thinking on", session, settings)
+    assert think.kind == "note"
+    assert settings.thinking is True
+    blocked = dispatch_slash(
+        "/setting thinking on",
+        SimpleNamespace(loop=SimpleNamespace(state=LoopState(), settings=other)),
+        other,
+    )
+    assert blocked.kind == "warn"
 
 
 def test_dispatch_slash_model_lists_and_rejects_args() -> None:
@@ -1134,6 +1274,39 @@ def test_tui_model_open_picker_and_confirm() -> None:
     assert seen == ["deepseek-v4-pro"]
     assert any("deepseek-v4-pro" in item.text for item in view.snapshot().items)
 
+
+def test_tui_setting_open_picker_and_confirm() -> None:
+    from types import SimpleNamespace
+
+    from coding_agent.agent.state import LoopState
+    from coding_agent.cli.editor import LineEditor
+    from coding_agent.cli.tui import OceanTui
+    from coding_agent.cli.view import ChatView
+    from fakes.settings import make_settings
+
+    view = ChatView()
+    settings = make_settings(thinking=False, stream=True, max_turns=30, max_context_tokens=32000)
+    session = SimpleNamespace(
+        loop=SimpleNamespace(state=LoopState(), settings=settings),
+        reset=lambda: None,
+    )
+    tui = OceanTui(session, None, settings, view)  # type: ignore[arg-type]
+    editor = LineEditor()
+    assert tui._slash("/setting") is False
+    picker = view.snapshot().picker
+    assert picker is not None
+    assert picker.kind == "setting"
+    assert [item.name for item in picker.items][:2] == ["thinking", "stream"]
+    tui._apply_picker(tui._pick.feed(b"j"), editor)
+    tui._apply_picker(tui._pick.feed(b" "), editor)
+    tui._apply_picker(tui._pick.feed(b"j"), editor)
+    tui._apply_picker(tui._pick.feed(b"l"), editor)
+    tui._apply_picker(tui._pick.feed(b"\r"), editor)
+    assert view.snapshot().picker is None
+    assert settings.stream is False
+    assert settings.max_turns == 31
+    assert any("流式=off" in item.text for item in view.snapshot().items)
+    assert any("轮次=31" in item.text for item in view.snapshot().items)
 
 
 def test_tui_tab_focuses_files_and_nav_moves(tmp_path) -> None:

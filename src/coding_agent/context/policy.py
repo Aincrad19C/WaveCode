@@ -170,6 +170,9 @@ class TruncatingContextPolicy(ContextPolicy):
         self._tool_output_max_chars = tool_output_max_chars
         self._estimator = estimator
 
+    def set_send_budget(self, n: int) -> None:
+        self._send_budget = max(1, n)
+
     def window(
         self,
         messages: Sequence[ChatMessage],
@@ -244,6 +247,9 @@ class SummarizingContextPolicy(ContextPolicy):
     def __init__(self, inner: TruncatingContextPolicy, summarizer: ConversationSummarizer) -> None:
         self._inner = inner
         self._summarizer = summarizer
+
+    def set_send_budget(self, n: int) -> None:
+        self._inner.set_send_budget(n)
 
     def compact(
         self,

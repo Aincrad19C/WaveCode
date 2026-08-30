@@ -362,7 +362,7 @@ class NavKeys:
 
 
 class PickerKeys:
-    """Key parser for the /skill, /mascot, and /model checkbox overlay."""
+    """Key parser for the /skill, /mascot, /model, and /setting overlay."""
 
     def __init__(self) -> None:
         self._pending = b""
@@ -448,6 +448,10 @@ class PickerKeys:
             return KeyAction("move", "-1")
         if code == "B":
             return KeyAction("move", "1")
+        if code == "C":
+            return KeyAction("nudge", "1")
+        if code == "D":
+            return KeyAction("nudge", "-1")
         return None
 
     def _letter(self, ch: str) -> KeyAction | None:
@@ -455,6 +459,14 @@ class PickerKeys:
             return KeyAction("move", "-1")
         if ch in "jJ":
             return KeyAction("move", "1")
+        if ch in "hH":
+            return KeyAction("nudge", "-1")
+        if ch in "lL":
+            return KeyAction("nudge", "1")
+        if ch == "-":
+            return KeyAction("nudge", "-1")
+        if ch == "+":
+            return KeyAction("nudge", "1")
         if ch == " ":
             return KeyAction("toggle")
         if ch in "qQ":

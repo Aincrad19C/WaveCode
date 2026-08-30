@@ -52,6 +52,9 @@ class ContextOverflowCondition(TerminationCondition):
     def __init__(self, max_context_tokens: int) -> None:
         self._max = max_context_tokens
 
+    def set_max(self, n: int) -> None:
+        self._max = n
+
     def evaluate(self, view: LoopView) -> TerminationDecision:
         if view.estimated_prompt_tokens > self._max and view.overflow_hits >= 2:
             return TerminationDecision(
@@ -68,6 +71,9 @@ class MaxTurnsCondition(TerminationCondition):
 
     def __init__(self, max_turns: int) -> None:
         self._max = max_turns
+
+    def set_max(self, n: int) -> None:
+        self._max = n
 
     def evaluate(self, view: LoopView) -> TerminationDecision:
         if view.turn >= self._max:

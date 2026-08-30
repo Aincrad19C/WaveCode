@@ -36,6 +36,12 @@ class ContextManager:
         self._send_budget = send_budget
         self._last_estimate = 0
 
+    def set_send_budget(self, n: int) -> None:
+        self._send_budget = max(1, n)
+        setter = getattr(self._policy, "set_send_budget", None)
+        if callable(setter):
+            setter(self._send_budget)
+
     def append(self, message: ChatMessage) -> None:
         self._store.append(message)
 

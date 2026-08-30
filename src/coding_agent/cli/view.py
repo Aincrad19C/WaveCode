@@ -91,6 +91,11 @@ class ChatView:
             if self._picker is not None:
                 self._picker = self._picker.toggled()
 
+    def nudge_picker(self, delta: int) -> None:
+        with self._lock:
+            if self._picker is not None:
+                self._picker = self._picker.nudged(delta)
+
     def set_focus(self, name: str) -> None:
         with self._lock:
             self._focus = name if name in {"input", "files", "changes", "text"} else "input"

@@ -302,3 +302,22 @@ def test_thinking_flag_honored_for_v4_flash(tmp_path: Path) -> None:
     loop = build_loop(llm, tmp_path, sink, settings)
     loop.run("hi")
     assert llm.calls[0].thinking_enabled is True
+
+
+def test_sync_runtime_settings_updates_budget_and_caps(tmp_path: Path) -> None:
+    llm = ScriptedLLM([assistant_text("ok")])
+    sink = RecordingSink()
+    settings = make_settings(workdir=tmp_path, max_turns=30, max_context_tokens=32000)
+    loop = build_loop(llm, tmp_path, sink, settings)
+    loop.settings.max_turns = 12
+    loop.settings.max_context_tokens = 20000
+    loop.sync_runtime_settings()
+    reserve = loop.settings.completion_reserve_tokens
+    assert loop.context._send_budget == 20000 - reserve
+    assert loop.context._policy._send_budget == 20000 - reserve
+    turns = next(c for c in loop.termination._conditions if isinstance(c, MaxTurnsCondition))
+    overflow = next(
+        c for c in loop.termination._conditions if isinstance(c, ContextOverflowCondition)
+    )
+    assert turns._max == 12
+    assert overflow._max == 20000
