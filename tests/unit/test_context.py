@@ -37,6 +37,29 @@ def make_policy(estimator: HeuristicTokenEstimator, budget: int = 500,
     )
 
 
+def test_compact_drops_oldest_eighty_percent() -> None:
+    estimator = HeuristicTokenEstimator()
+    policy = make_policy(estimator, budget=100_000, max_chars=100_000)
+    messages = [system()]
+    for i in range(10):
+        messages.append(ChatMessage(role=Role.USER, content=f"MARK{i} " + "z" * 100))
+    compacted, note = policy.compact(
+        messages, budget=100_000, estimator=estimator, tool_schemas=[]
+    )
+    assert "dropped" in note
+    kept_users = [
+        m.content or ""
+        for m in compacted
+        if m.role is Role.USER
+        and m.content
+        and not m.content.startswith("[context compacted]")
+    ]
+    joined = "\n".join(m.content or "" for m in compacted)
+    assert "MARK0" in joined
+    assert any("MARK9" in text for text in kept_users)
+    assert not any("MARK0" in text for text in kept_users)
+
+
 def test_oversized_tool_output_truncated() -> None:
     estimator = HeuristicTokenEstimator()
     policy = make_policy(estimator, budget=10_000, max_chars=1000)
@@ -104,6 +127,27 @@ def test_manager_returns_unchanged_when_within_budget() -> None:
     assert note is None
     assert len(messages) == 2
     assert estimate > 0
+
+
+def test_compact_leaves_room_so_next_tool_does_not_recompact() -> None:
+    estimator = HeuristicTokenEstimator()
+    store = ConversationStore(system())
+    budget = 2000
+    manager = ContextManager(
+        store=store,
+        policy=make_policy(estimator, budget=budget, max_chars=100_000),
+        estimator=estimator,
+        send_budget=budget,
+    )
+    for i in range(20):
+        manager.append(ChatMessage(role=Role.USER, content=f"task {i} " + "pad " * 40))
+        manager.append(ChatMessage(role=Role.ASSISTANT, content="done " + "pad " * 40))
+    _, first_est, note = manager.build_request_messages([])
+    assert note is not None
+    assert first_est <= budget
+    manager.append(ChatMessage(role=Role.USER, content="tiny follow-up"))
+    _, _, again = manager.build_request_messages([])
+    assert again is None
 
 
 def test_manager_compacts_and_writes_back() -> None:

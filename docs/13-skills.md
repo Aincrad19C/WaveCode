@@ -20,15 +20,15 @@ Skill 是一段 **Markdown 说明书**，教本会话里的模型怎么做某一
 |------|------|------|
 | 0 | 安装包内 `coding_agent/skills/packs/<名>/` | 随包装的默认 skill |
 | 1 | `~/.wavemio/skills/<名>/` | 旧目录，只读扫描 |
-| 2 | `~/.wavecode/skills/<名>/` | 用户投放（启动时创建并写 README） |
+| 2 | `~/.wavecode/skills/<名>/` | 用户目录（启动时创建） |
 | 3 | `<工作区>/.wavemio/skills/<名>/` | 旧工作区，只读 |
 | 4 | `<工作区>/.wavecode/skills/<名>/` | 项目约定，可进仓库 |
 
 识别条件：目录内有 `SKILL.md`（大小写敏感）。没有则忽略。
 
-启动全屏 / REPL 时 `ensure_user_skills()`：创建 `~/.wavecode/skills/`，写入 `README.txt`（怎么写 SKILL.md、`/skill` 用法）。不要在文档或 README 里写「吉祥物」「鲸鱼娘」。
+启动全屏 / REPL 时 `ensure_user_skills()`：创建 `~/.wavecode/skills/`，不写入说明文件。不要在文档或 README 里写「吉祥物」「鲸鱼娘」。
 
-发行包默认随安装提供，可被用户或工作区同名覆盖：目前仅 `frontend-design`（仿 Anthropic 官方前端设计 skill）。
+安装包内默认 skill 可被用户或工作区同名覆盖：`frontend-design`（仿 Anthropic 官方前端设计 skill）、`tdd`（仿 Matt Pocock 的红绿循环）。
 
 `.wavecode/` 仍在 `IGNORED_DIRS` 里：文件树和 grep 默认不扫 skill 目录，避免把说明书当源码搜。
 
@@ -59,7 +59,7 @@ description: 写或改网页、组件、仪表盘、落地页时用。先定视�
 
 | 输入 | 行为 |
 |------|------|
-| `/skill` | 全屏：列出全部包并勾选。空格切换、Enter 确认、Esc 取消。REPL：打印带 `[✓]` 的列表与投放目录 |
+| `/skill` | 全屏：列出全部包并勾选。空格切换、Enter 确认、Esc 取消。REPL：打印带 `[✓]` 的列表 |
 | `/skill` 带参数 | warn，提示使用勾选列表，不发给模型 |
 
 `/help` 必须出现 `/skill`。未知 `/xxx` 仍不送模型。装载与卸下只通过勾选列表确认。
@@ -85,6 +85,7 @@ def build_system_prompt(
 ```
 Available skills, distinct from tools. The user enables them with the /skill picker:
 - frontend-design: 写或改网页、组件、仪表盘、落地页时用。先定视觉方向再写代码。
+- tdd: 写功能或修 bug 时先写失败测试再补实现。
 ```
 
 已装载则再追加：
@@ -130,7 +131,7 @@ class SkillBank:
 
 - 无 `SKILL.md` 的目录不出现在 discover。
 - 工作区同名覆盖用户目录。
-- `/skill` 无参数：全屏打开勾选；REPL 列表含 `~/.wavecode/skills`、发行包名。
+- `/skill` 无参数：全屏打开勾选；REPL 列表只含包名与说明，不写来源标签或路径。
 - `/skill` 带参数：warn，不装载。
 - 勾选确认后 `store.all()[0]` 含正文；历史条数除 system 内容外不变。
 - 取消勾选后正文消失，目录还在。

@@ -95,18 +95,10 @@ def discover_models(llm: Any, *, current: str) -> list[ModelInfo]:
 
 def list_text(models: list[ModelInfo], *, current: str) -> str:
     current_id = current.strip()
-    lines = [
-        f"当前  {current_id}",
-        "",
-        "全屏：空格勾选，Enter 确认，Esc 取消。",
-        "",
-        "模型：",
-    ]
+    lines = [f"当前  {current_id}", ""]
     for info in models:
         mark = "✓" if info.id == current_id else " "
         lines.append(f"  [{mark}] {info.id}")
-    lines.append("")
-    lines.append("请输入 /model 打开勾选列表。")
     return "\n".join(lines)
 
 

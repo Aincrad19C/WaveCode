@@ -74,23 +74,17 @@ def test_builtin_pack_gif_is_package_data() -> None:
     assert idle.is_file()
 
 
-def test_ensure_user_packs_writes_howto(tmp_path) -> None:
+def test_ensure_user_packs_seeds_default(tmp_path) -> None:
     from coding_agent.cli.sprites.pack import ensure_user_packs
 
     dest = ensure_user_packs(home=tmp_path)
     assert dest == tmp_path / ".wavecode" / "mascots"
-    readme = dest / "README.txt"
-    assert readme.is_file()
-    text = readme.read_text(encoding="utf-8")
-    assert "~/.wavecode/mascots" in text
-    assert "idle.gif" in text
-    assert "把整个文件夹放到这里" in text
-    assert "/mascot <包名>" not in text
-    assert "内置" not in text
+    assert not (dest / "README.txt").is_file()
     assert (dest / "default" / "idle.gif").is_file()
     assert (dest / "default" / "think.gif").is_file()
+    idle = (dest / "default" / "idle.gif").read_bytes()
     ensure_user_packs(home=tmp_path)
-    assert readme.read_text(encoding="utf-8") == text
+    assert (dest / "default" / "idle.gif").read_bytes() == idle
 
 
 def test_ensure_user_packs_seeds_workspace_and_keeps_edits(tmp_path) -> None:

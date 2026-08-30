@@ -23,6 +23,9 @@ OMITTED_FOOTER = (
     "use list_dir/grep rather than assuming memory."
 )
 _COMPACT_MARK = "[context compacted]"
+# When over budget, send the oldest ~80% of rest (by token estimate) to the
+# summarizer and keep the newest ~20%. The newest block is never dropped.
+_DROP_OLDEST_RATIO = 0.8
 
 
 class ContextPolicy(ABC):
@@ -88,6 +91,57 @@ def _budget_note(
     return None
 
 
+def _partition_oldest(
+    blocks: Sequence[_Block], estimator: TokenEstimator
+) -> tuple[tuple[_Block, ...], tuple[_Block, ...]]:
+    """Drop oldest blocks until ~80% of rest tokens are dropped; keep the rest.
+
+    Always keep at least the newest block so a live tool pair is never split.
+    """
+    if not blocks:
+        return (), ()
+    costs = [sum(estimator.estimate_message(m) for m in block.messages) for block in blocks]
+    total = sum(costs)
+    if total <= 0:
+        return (), tuple(blocks)
+    drop_target = int(total * _DROP_OLDEST_RATIO)
+    dropped_cost = 0
+    index = 0
+    while index < len(blocks) - 1 and dropped_cost < drop_target:
+        dropped_cost += costs[index]
+        index += 1
+    return tuple(blocks[:index]), tuple(blocks[index:])
+
+
+def _fit_kept(
+    system: ChatMessage,
+    memo: ChatMessage | None,
+    kept: Sequence[_Block],
+    *,
+    target: int,
+    estimator: TokenEstimator,
+    tool_schemas: Sequence[Mapping[str, Any]],
+) -> list[ChatMessage]:
+    """Drop oldest kept blocks (never the newest) if the memo still exceeds budget."""
+    blocks = list(kept)
+    prefix = [system] if memo is None else [system, memo]
+
+    def assemble() -> list[ChatMessage]:
+        out = list(prefix)
+        for block in blocks:
+            out.extend(block.messages)
+        return out
+
+    result = assemble()
+    while len(blocks) > 1:
+        cost = estimator.estimate_messages(result) + estimator.estimate_tools(tool_schemas)
+        if cost <= target:
+            break
+        blocks.pop(0)
+        result = assemble()
+    return result
+
+
 def _peel_previous(dropped: Sequence[_Block]) -> tuple[str | None, list[ChatMessage]]:
     previous: str | None = None
     rest: list[ChatMessage] = []
@@ -120,26 +174,11 @@ class TruncatingContextPolicy(ContextPolicy):
         self,
         messages: Sequence[ChatMessage],
         *,
-        budget: int,
         estimator: TokenEstimator,
-        tool_schemas: Sequence[Mapping[str, Any]],
     ) -> _Window:
         system, rest = messages[0], [self._truncate_message(m) for m in messages[1:]]
-        blocks = _split_blocks(rest)
-        message_budget = budget - estimator.estimate_tools(tool_schemas)
-        kept: list[_Block] = []
-        used = estimator.estimate_message(system)
-        dropped: list[_Block] = []
-        for index, block in enumerate(reversed(blocks)):
-            cost = sum(estimator.estimate_message(m) for m in block.messages)
-            if index == 0 or used + cost <= message_budget:
-                kept.append(block)
-                used += cost
-            else:
-                dropped = blocks[: len(blocks) - index]
-                break
-        kept.reverse()
-        return _Window(system=system, dropped=tuple(dropped), kept=tuple(kept))
+        dropped, kept = _partition_oldest(_split_blocks(rest), estimator)
+        return _Window(system=system, dropped=dropped, kept=kept)
 
     def compact(
         self,
@@ -151,19 +190,25 @@ class TruncatingContextPolicy(ContextPolicy):
     ) -> tuple[list[ChatMessage], str]:
         budget = self._send_budget if budget is None else budget
         estimator = estimator or self._estimator
-        win = self.window(messages, budget=budget, estimator=estimator, tool_schemas=tool_schemas)
-        result: list[ChatMessage] = [win.system]
+        win = self.window(messages, estimator=estimator)
         notes: list[str] = []
+        memo = None
         if win.dropped:
-            result.append(self._omission_summary(win.dropped))
+            memo = self._omission_summary(win.dropped)
             notes.append(f"dropped {len(win.dropped)} old block(s)")
-        for block in win.kept:
-            result.extend(block.messages)
+        result = _fit_kept(
+            win.system,
+            memo,
+            win.kept,
+            target=budget,
+            estimator=estimator,
+            tool_schemas=tool_schemas,
+        )
         if extra := _budget_note(
             result, budget=budget, estimator=estimator, tool_schemas=tool_schemas
         ):
             notes.append(extra)
-        return result, "; ".join(notes) or "truncated oversized messages"
+        return result, "; ".join(notes)
 
     def _truncate_message(self, message: ChatMessage) -> ChatMessage:
         limit = self._tool_output_max_chars
@@ -208,20 +253,24 @@ class SummarizingContextPolicy(ContextPolicy):
         estimator: TokenEstimator,
         tool_schemas: Sequence[Mapping[str, Any]],
     ) -> tuple[list[ChatMessage], str]:
-        win = self._inner.window(
-            messages, budget=budget, estimator=estimator, tool_schemas=tool_schemas
-        )
-        result: list[ChatMessage] = [win.system]
+        win = self._inner.window(messages, estimator=estimator)
         notes: list[str] = []
+        memo = None
         if win.dropped:
-            result.append(self._summarize_or_fallback(win.dropped, notes))
-        for block in win.kept:
-            result.extend(block.messages)
+            memo = self._summarize_or_fallback(win.dropped, notes)
+        result = _fit_kept(
+            win.system,
+            memo,
+            win.kept,
+            target=budget,
+            estimator=estimator,
+            tool_schemas=tool_schemas,
+        )
         if extra := _budget_note(
             result, budget=budget, estimator=estimator, tool_schemas=tool_schemas
         ):
             notes.append(extra)
-        return result, "; ".join(notes) or "truncated oversized messages"
+        return result, "; ".join(notes)
 
     def _summarize_or_fallback(self, dropped: Sequence[_Block], notes: list[str]) -> ChatMessage:
         previous, rest = _peel_previous(dropped)

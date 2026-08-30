@@ -59,7 +59,7 @@ class ContextManager:
         self._store.replace_tail_view(compacted)
         estimate = tools_cost + self._estimator.estimate_messages(compacted)
         self._last_estimate = estimate
-        return compacted, estimate, note
+        return compacted, estimate, note or None
 
     def observe_usage(self, usage: TokenUsage) -> None:
         if usage.prompt_tokens <= 0 or self._last_estimate <= 0:

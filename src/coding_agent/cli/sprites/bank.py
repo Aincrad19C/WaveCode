@@ -8,14 +8,7 @@ from pathlib import Path
 from rich.text import Text
 
 from coding_agent.cli.pixel import PixelGrid, render_halfblock
-from coding_agent.cli.sprites.pack import (
-    POSES,
-    PoseClip,
-    discover_packs,
-    load_pack,
-    pack_origin,
-    user_home_packs,
-)
+from coding_agent.cli.sprites.pack import POSES, PoseClip, discover_packs, load_pack
 
 _USAGE = "请输入 /mascot 打开勾选列表。"
 
@@ -55,31 +48,19 @@ class MascotBank:
     def render(self) -> Text:
         return render_halfblock(self.grid())
 
-    def rows(self) -> list[tuple[str, str, bool]]:
-        """name, origin, checked. Radio: at most one checked."""
+    def rows(self) -> list[tuple[str, bool]]:
+        """name, checked. Radio: at most one checked."""
         self._ensure()
         return [
-            (name, pack_origin(path), name == self.pack_name)
-            for name, path in discover_packs(self.workdir).items()
+            (name, name == self.pack_name)
+            for name, _path in discover_packs(self.workdir).items()
         ]
 
     def list_text(self) -> str:
-        lines = [
-            f"当前  {self.pack_name}",
-            "",
-            "新包放到  ~/.wavecode/mascots/<包名>/  或  <工作区>/.wavecode/mascots/<包名>/",
-            "启动时会把 default 复制进上述目录（已有文件不覆盖）。",
-            f"本机用户目录  {user_home_packs()}",
-            "全屏：空格勾选，Enter 确认，Esc 取消。",
-            "同名时工作区覆盖用户目录，用户目录覆盖发行包。",
-            "",
-            "包：",
-        ]
-        for name, origin, checked in self.rows():
+        lines = [f"当前  {self.pack_name}", ""]
+        for name, checked in self.rows():
             mark = "✓" if checked else " "
-            lines.append(f"  [{mark}] {name:12} {origin}")
-        lines.append("")
-        lines.append(_USAGE)
+            lines.append(f"  [{mark}] {name}")
         return "\n".join(lines)
 
     def set_pose(self, name: str) -> None:

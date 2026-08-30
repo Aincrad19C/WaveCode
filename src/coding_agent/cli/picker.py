@@ -70,13 +70,13 @@ class PickState:
 
 def skill_picker(bank: SkillBank) -> PickState:
     items = tuple(
-        PickItem(name=name, detail=detail, origin=origin, checked=checked)
-        for name, detail, origin, checked in bank.rows()
+        PickItem(name=name, detail=detail, origin="", checked=checked)
+        for name, detail, checked in bank.rows()
     )
     return PickState(
         kind="skill",
         title="Skill",
-        hint="新包放到 ~/.wavecode/skills/<名>/  ·  空格勾选  Enter 确认  Esc 取消",
+        hint="空格勾选  Enter 确认  Esc 取消",
         items=items,
         multi=True,
         max_checked=MAX_ACTIVE,
@@ -103,16 +103,14 @@ def model_picker(models: Sequence[ModelInfo], *, current: str) -> PickState:
 
 def mascot_picker(bank: MascotBank) -> PickState:
     items = tuple(
-        PickItem(name=name, detail="", origin=origin, checked=checked)
-        for name, origin, checked in bank.rows()
+        PickItem(name=name, detail="", origin="", checked=checked)
+        for name, checked in bank.rows()
     )
     cursor = next((i for i, item in enumerate(items) if item.checked), 0)
     return PickState(
         kind="mascot",
         title="立绘包",
-        hint=(
-            "新包：工作区 .wavecode/mascots/<包名>/  ·  空格勾选  Enter 确认  Esc 取消"
-        ),
+        hint="空格勾选  Enter 确认  Esc 取消",
         items=items,
         cursor=cursor,
         multi=False,

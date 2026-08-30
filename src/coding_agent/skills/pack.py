@@ -7,13 +7,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from coding_agent.config.paths import (
-    LEGACY_DIRNAME,
-    PRODUCT_DIRNAME,
-    SKILLS,
-    extra_skill_roots,
-    user_skill_dir,
-)
+from coding_agent.config.paths import PRODUCT_DIRNAME, SKILLS, extra_skill_roots, user_skill_dir
 
 logger = logging.getLogger(__name__)
 
@@ -23,34 +17,7 @@ DESC_CLIP = 160
 SKILL_FILE = "SKILL.md"
 
 BUILTIN_SKILLS = Path(__file__).resolve().parent / "packs"
-
-_HOWTO = """Skill 包
-
-每个包是一个目录，内含 SKILL.md。将文件夹放入投放目录即可。
-
-输入 /skill 打开勾选列表：空格切换、Enter 确认、Esc 取消。
-滚动 REPL 打印当前列表，不接受包名参数。
-
-投放目录，后者覆盖同名：
-
-  0. 发行     WaveCode 安装包内的默认 skill
-  1. 用户     ~/.wavecode/skills/<包名>/
-  2. 工作区   <工作区>/.wavecode/skills/<包名>/
-  兼容：仍读取 ~/.wavemio/skills/ 与 <工作区>/.wavemio/skills/
-
-SKILL.md 示例：
-
----
-name: frontend-design
-description: 写或改网页时启用。先定视觉方向再写代码。
----
-
-正文为 Markdown。仅注入该文件，不执行 scripts。
-
-斜杠命令：
-
-  /skill    打开勾选列表。全屏交互选择，REPL 打印列表。
-"""
+BUILTIN_SKILL_NAMES = frozenset({"frontend-design", "tdd"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,11 +103,11 @@ def discover_skills(
 ) -> dict[str, SkillPack]:
     """Return skill name → pack. Later roots override the same name."""
     found: dict[str, SkillPack] = {}
-    roots: list[Path] = []
+    roots: list[tuple[Path, bool]] = []
     if include_builtin:
-        roots.append(BUILTIN_SKILLS)
-    roots.extend(extra_skill_roots(workdir, include_user=include_user))
-    for base in roots:
+        roots.append((BUILTIN_SKILLS, True))
+    roots.extend((root, False) for root in extra_skill_roots(workdir, include_user=include_user))
+    for base, builtin in roots:
         if not base.is_dir():
             continue
         try:
@@ -149,6 +116,8 @@ def discover_skills(
             continue
         for child in children:
             if not child.is_dir() or child.name.startswith(".") or not NAME_RE.match(child.name):
+                continue
+            if builtin and child.name not in BUILTIN_SKILL_NAMES:
                 continue
             if not (child / SKILL_FILE).is_file():
                 continue
@@ -161,23 +130,4 @@ def discover_skills(
 def ensure_user_skills(*, home: Path | None = None) -> Path:
     dest = (Path(home) / PRODUCT_DIRNAME / SKILLS) if home is not None else user_skill_dir()
     dest.mkdir(parents=True, exist_ok=True)
-    readme = dest / "README.txt"
-    if not readme.is_file():
-        readme.write_text(_HOWTO, encoding="utf-8")
     return dest
-
-
-def skill_origin(path: Path) -> str:
-    resolved = path.resolve()
-    try:
-        resolved.relative_to(BUILTIN_SKILLS.resolve())
-        return "发行"
-    except ValueError:
-        pass
-    for root in (user_skill_dir(), Path.home() / LEGACY_DIRNAME / SKILLS):
-        try:
-            resolved.relative_to(root.resolve())
-            return "用户"
-        except ValueError:
-            continue
-    return "工作区"

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from coding_agent.skills.pack import SkillPack, discover_skills, skill_origin, user_skill_dir
+from coding_agent.skills.pack import SkillPack, discover_skills
 
 MAX_ACTIVE = 8
 _USAGE = "请输入 /skill 打开勾选列表。"
@@ -37,10 +37,10 @@ class SkillBank:
                 out.append((name, pack.body))
         return out
 
-    def rows(self) -> list[tuple[str, str, str, bool]]:
-        """name, description, origin, checked."""
+    def rows(self) -> list[tuple[str, str, bool]]:
+        """name, description, checked."""
         return [
-            (name, pack.description, skill_origin(pack.root), name in self._active)
+            (name, pack.description, name in self._active)
             for name, pack in self.discover().items()
         ]
 
@@ -58,19 +58,11 @@ class SkillBank:
         lines = [
             f"当前已装载  {', '.join(self._active) if self._active else '无'}",
             "",
-            "新包放到  ~/.wavecode/skills/<包名>/",
-            f"本机路径  {user_skill_dir()}",
-            "工作区也可：<工作区>/.wavecode/skills/<包名>/",
-            "全屏：空格勾选，Enter 确认，Esc 取消。",
-            "同名时工作区覆盖用户目录，用户目录覆盖发行包。",
-            "",
-            "包：",
         ]
-        for name, description, origin, checked in self.rows():
+        for name, description, checked in self.rows():
             mark = "✓" if checked else " "
-            lines.append(f"  [{mark}] {name:12} {origin}  {description}")
-        lines.append("")
-        lines.append(_USAGE)
+            extra = f"  {description}" if description else ""
+            lines.append(f"  [{mark}] {name}{extra}")
         return "\n".join(lines)
 
     def apply(self, token: str) -> tuple[str, str]:

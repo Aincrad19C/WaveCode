@@ -27,8 +27,8 @@ def help_text(settings: Settings) -> str:
   /tools         列出工具名称与说明
   /status        工作区、模型、轮次与 token 估计
   /model         打开模型勾选列表
-{think_line}  /mascot        打开立绘包列表。新包放到工作区 .wavecode/mascots/<包名>/
-  /skill         打开 skill 列表。新包放到 ~/.wavecode/skills/<名>/
+{think_line}  /mascot        打开立绘包列表
+  /skill         打开 skill 列表
   /vim 路径      用外部编辑器打开文件
   /quit /exit /q 退出
 

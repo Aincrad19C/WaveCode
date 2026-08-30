@@ -42,7 +42,7 @@ pip install dist/wavecode-*.whl
 
 把文件夹放到 **`~/.wavecode/skills/<名>/`**，内含 `SKILL.md`（YAML frontmatter + Markdown 正文）。工作区也可用 `<工作区>/.wavecode/skills/`。启动全屏或 REPL 时会创建用户目录并写入说明。
 
-随包装了 1 个默认 skill：`frontend-design`（仿 Anthropic 官方前端设计 skill：先定视觉方向再写页面）。`/skill` 在全屏列出全部包并勾选装载，最多 8 个；滚动 REPL 打印带 `[✓]` 的列表。用户或工作区同名目录覆盖发行包。目录里只放名称与一句话说明，全文按需装载。不执行 skill 目录里的脚本。详见 [docs/13-skills.md](./docs/13-skills.md)。
+随包装了 2 个默认 skill：`frontend-design`（仿 Anthropic 官方前端设计 skill：先定视觉方向再写页面）、`tdd`（仿 Matt Pocock 的红绿循环：先写失败测试再补实现）。`/skill` 在全屏列出全部包并勾选装载，最多 8 个；滚动 REPL 打印带 `[✓]` 的列表。用户或工作区同名目录覆盖同名内置包。目录里只放名称与一句话说明，全文按需装载。不执行 skill 目录里的脚本。详见 [docs/13-skills.md](./docs/13-skills.md)。
 
 ## 配置密钥（不要提交进仓库）
 
@@ -82,5 +82,5 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest    # 全部单测离线运行（禁网�
 - `bash` 工具**不是完整沙箱**：文件工具被限制在工作区内（路径逃逸会被拒绝），但 shell 命令本身
   仍可 `cd` 出去；仅做了极小的危险命令黑名单，请在可信目录下使用。
 - 子进程环境会剥离 `DEEPSEEK_API_KEY` 及形如 `*_KEY / *_TOKEN / *SECRET*` 的变量，防止密钥泄漏进模型上下文。
-- 上下文超预算时先截断过长 tool/assistant 文本（头 70% / 尾 20%），再丢掉旧轮次；默认用一次**无工具** LLM 把丢掉的内容收成备忘（`WAVEMIO_SUMMARIZE_CONTEXT=false` 则只保留用户原句摘录）。摘要失败不影响主任务。规格见 [docs/04-context-management.md](./docs/04-context-management.md) §4.2。
+- 上下文超预算时先截断过长 tool/assistant 文本（头 70% / 尾 20%），再把最旧约 80% 的轮次交给一次**无工具** LLM 收成备忘，只留最近约 20%（`WAVEMIO_SUMMARIZE_CONTEXT=false` 则只保留用户原句摘录）。摘要失败不影响主任务。规格见 [docs/04-context-management.md](./docs/04-context-management.md) §4.2。
 - Skill 是用户 Markdown，会进 system prompt；只装自己信任的包。无 Web UI、无多 Agent、无 MCP、无跨会话向量记忆。

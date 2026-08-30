@@ -66,7 +66,11 @@ def test_apply_opens_list_and_rejects_name_args(tmp_path: Path) -> None:
     bank = reset_skills()
     bank.set_workdir(tmp_path)
     assert bank.apply("")[0] == "pick"
-    assert "~/.wavecode/skills" in bank.list_text() or ".wavecode/skills" in bank.list_text()
+    listed = bank.list_text()
+    assert "pytest-style" in listed
+    assert "发行" not in listed
+    assert "~/.wavecode" not in listed
+    assert ".wavecode/skills" not in listed
     assert bank.apply("pytest-style")[0] == "warn"
     assert bank.apply("-pytest-style")[0] == "warn"
     assert bank.apply("clear")[0] == "warn"
@@ -75,6 +79,7 @@ def test_apply_opens_list_and_rejects_name_args(tmp_path: Path) -> None:
     assert kind == "note"
     listed = bank.list_text()
     assert "[✓]" in listed
+    assert "发行" not in listed
     assert "[x]" not in listed
     bodies = bank.active_bodies()
     assert bodies[0][0] == "pytest-style"
@@ -87,14 +92,11 @@ def test_apply_opens_list_and_rejects_name_args(tmp_path: Path) -> None:
         assert banned not in bank.list_text()
 
 
-def test_ensure_user_skills_writes_howto(tmp_path: Path) -> None:
+def test_ensure_user_skills_creates_dir(tmp_path: Path) -> None:
     dest = ensure_user_skills(home=tmp_path)
-    text = (dest / "README.txt").read_text(encoding="utf-8")
-    assert "/skill" in text
-    assert "/skill <包名>" not in text
-    assert "/skill clear" not in text
-    for banned in ("吉祥物", "鲸鱼娘", "鲸鱼酿"):
-        assert banned not in text
+    assert dest.is_dir()
+    assert dest == tmp_path / ".wavecode" / "skills"
+    assert not (dest / "README.txt").is_file()
 
 
 def test_system_prompt_catalog_and_active() -> None:
@@ -166,22 +168,42 @@ def test_parse_without_frontmatter() -> None:
 def test_builtin_skill_is_package_data() -> None:
     from importlib.resources import files
 
-    skill = files("coding_agent.skills.packs").joinpath("frontend-design").joinpath("SKILL.md")
-    assert skill.is_file()
+    packs = files("coding_agent.skills.packs")
+    assert packs.joinpath("frontend-design").joinpath("SKILL.md").is_file()
+    assert packs.joinpath("tdd").joinpath("SKILL.md").is_file()
 
 
 def test_builtin_skills_are_discoverable() -> None:
-    from coding_agent.skills.pack import BUILTIN_SKILLS, skill_origin
+    from coding_agent.skills.pack import BUILTIN_SKILL_NAMES, BUILTIN_SKILLS
 
     found = discover_skills(include_user=False)
-    assert set(found) == {"frontend-design"}
+    assert set(found) == {"frontend-design", "tdd"}
+    assert {p.name for p in BUILTIN_SKILLS.iterdir() if p.is_dir()} == set(BUILTIN_SKILL_NAMES)
     pack = found["frontend-design"]
-    assert skill_origin(pack.root) == "发行"
+    assert pack.root == BUILTIN_SKILLS / "frontend-design"
     assert (BUILTIN_SKILLS / "frontend-design" / "SKILL.md").is_file()
     assert "token" in pack.body.lower() or "签名" in pack.body
+    tdd = found["tdd"]
+    assert tdd.root == BUILTIN_SKILLS / "tdd"
+    assert "先红后绿" in tdd.body or "失败测试" in tdd.body
     for banned in ("吉祥物", "鲸鱼娘", "鲸鱼酿"):
         assert banned not in pack.body
         assert banned not in pack.description
+        assert banned not in tdd.body
+        assert banned not in tdd.description
+
+
+def test_stale_builtin_skill_dirs_are_ignored(tmp_path: Path, monkeypatch) -> None:
+    from coding_agent.skills import pack as pack_mod
+
+    packs = tmp_path / "packs"
+    _write_skill(packs, "frontend-design", "keep")
+    _write_skill(packs, "code-review", "stale")
+    _write_skill(packs, "debug", "stale")
+    monkeypatch.setattr(pack_mod, "BUILTIN_SKILLS", packs)
+    found = discover_skills(include_user=False)
+    assert set(found) == {"frontend-design"}
+    assert "stale" not in found["frontend-design"].body
 
 
 def test_replace_active_and_workspace_overrides_builtin(tmp_path: Path) -> None:

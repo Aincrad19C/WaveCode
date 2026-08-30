@@ -48,7 +48,7 @@
 - 流式输出（content / reasoning_content / tool_calls 增量拼接）
 - 7 个工具：`read_file` `write_file` `edit_file` `list_dir` `glob_search` `grep` `bash`
 - 工作区沙箱（默认 `cwd`，可用 `--workdir`）
-- 上下文滑动窗口 + 大工具结果截断 + 预留下一轮 completion 配额
+- 上下文：超预算时把最旧约 80% 交模型摘要，并截断大工具结果；预留下一轮 completion 配额
 - 超预算时默认用一次无工具 LLM 把丢掉的旧轮次收成摘要（失败则回退 user 原文摘录）
 - 发行包与用户/工作区 `SKILL.md` 包 + 斜杠 `/skill` 勾选装载进本会话 system（见 13）
 - 终止条件组合（最大轮次、无工具且有正文、连续失败、用户取消、墙钟、上下文预算）

@@ -13,7 +13,6 @@ from coding_agent.config.paths import (
     MASCOTS,
     PRODUCT_DIRNAME,
     extra_mascot_roots,
-    legacy_user_mascot_dir,
     user_mascot_dir,
     workspace_mascot_dir,
 )
@@ -67,9 +66,8 @@ def discover_packs(
 
 
 def ensure_user_packs(*, home: Path | None = None, workdir: Path | None = None) -> Path:
-    """Create mascot drop dirs, write HOWTO, and copy the bundled default pack.
+    """Create mascot dirs and copy the bundled default pack.
 
-    Home: ``~/.wavecode/mascots``. Workspace: ``<workdir>/.wavecode/mascots``.
     Existing files are not overwritten.
     """
     dest = (Path(home) / PRODUCT_DIRNAME / MASCOTS) if home is not None else user_mascot_dir()
@@ -83,11 +81,6 @@ def ensure_user_packs(*, home: Path | None = None, workdir: Path | None = None) 
 
 def _prepare_mascot_dir(dest: Path) -> None:
     dest.mkdir(parents=True, exist_ok=True)
-    readme = dest / "README.txt"
-    if not readme.is_file():
-        bundled = BUILTIN_PACKS / "README.txt"
-        if bundled.is_file():
-            readme.write_text(bundled.read_text(encoding="utf-8"), encoding="utf-8")
     _copy_default_pack(dest)
 
 
@@ -186,19 +179,3 @@ def _load_clip(path: Path, palette: dict[str, str]) -> PoseClip:
         raise ValueError(f"{path.name} requires palette.txt")
     still = parse_grid(parse_frame_text(path.read_text(encoding="utf-8")), palette)
     return PoseClip((still,))
-
-
-def pack_origin(path: Path) -> str:
-    resolved = path.resolve()
-    try:
-        resolved.relative_to(BUILTIN_PACKS.resolve())
-        return "发行"
-    except ValueError:
-        pass
-    for home_root in (user_mascot_dir(), legacy_user_mascot_dir()):
-        try:
-            resolved.relative_to(home_root.resolve())
-            return "用户"
-        except ValueError:
-            continue
-    return "工作区"

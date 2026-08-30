@@ -36,7 +36,8 @@ send_budget = settings.max_context_tokens - settings.completion_reserve_tokens
 ```
 cost = estimate_tools(schemas) + estimate_messages(messages)
 if cost <= send_budget: return messages
-else: compact until cost <= send_budget or 不能再压
+else: 从最旧块起丢掉约 80% 的 rest（按 token 估计），交给模型收成备忘，只留最近约 20%
+# 最近一块始终保留。摘要加上保留区后若仍超 send_budget，再从保留区最旧块剥到能发为止。
 ```
 
 若压完仍超预算：`ContextOverflowCondition` 会在下一轮 evaluate 时停（见 07）。本轮仍尝试发送最后 compact 结果，避免「刚好超 1 token」就死；但 `state.estimated_prompt_tokens` 如实上报。
@@ -66,11 +67,9 @@ else: compact until cost <= send_budget or 不能再压
 
 头尾比例：70% / 10% 省略标记 / 20% 尾。保证 JSON 代码块被截断时尾部仍可能有错误栈。
 
-**阶段 2 — 滑动窗口**
+**阶段 2 — 最旧约 80% 交模型压缩**
 
-从 **最新块向前** 累积，直到加入下一块会超过 `send_budget - estimate_tools`。
-
-被丢掉的旧块用 **一条** 合成 user 消息替换（插在 system 之后、保留区之前）。默认走 **§4.2 模型摘要**；摘要失败时回退下面的原文摘录（V1 的 `TruncatingContextPolicy._omission_summary`，仍保留作兜底）：
+触发 compact 的条件仍是估计值超过 `send_budget`。一旦触发：按 token 估计，从 **最旧块** 起丢掉约 80% 的 rest，只留最近约 20%。块很少或最近一块已经很大时，丢掉的比例会低于 80%，因为最近一块始终保留。丢掉的块 **整块** 交给 §4.2 的无工具 LLM 收成一条备忘。摘要失败时回退原文摘录（`TruncatingContextPolicy._omission_summary`）：
 
 ```
 [context compacted] Older turns were omitted. Summary of omitted user tasks:
@@ -91,7 +90,7 @@ Files already edited in omitted turns may exist on disk; use list_dir/grep rathe
 
 超预算时不只列用户原句，而用 **一次额外的、无工具的 LLM 调用** 把丢掉的旧轮次收成一段备忘，行为接近 Cursor 的 conversation summary：后面的模型仍看得见目标、改过的文件、坑和未完成项，却不必重放整段 tool 日志。
 
-**组合方式：** 先跑与 §4 完全相同的阶段 0–1 与滑动窗口（可内嵌 `TruncatingContextPolicy` 算出 `dropped` / `kept`）。有 `dropped` 时再摘要；没有丢掉的块则只截断大文本，不打模型。
+**组合方式：** 先跑与 §4 完全相同的阶段 0–1，再按最旧约 80% 切出 `dropped` / `kept`。有 `dropped` 时再摘要；没有丢掉的块则只截断大文本，不打模型。
 
 **插入位置：** 仍是 `system` 之后、保留区之前 **一条** `role=user` 消息。新头：
 
@@ -164,5 +163,5 @@ system **只存一条**，在 `ConversationStore` 构造时写入，来自 `app/
 - 超长 tool 结果被截断且含 `truncated by agent`。
 - assistant+tools 块不会在中间切断（断言 compact 后若存在某 tool_call_id，其 assistant 也在）。
 - system 永远 index 0。
-- 省略摘要或模型备忘出现在 system 之后。
+- 超预算时从最旧起约 80% 的块进摘要，最近约 20% 留下。
 - `SummarizingContextPolicy`：Fake summarizer 的文本在 `compacted[1]`；抛错则 `OMITTED_HEADER`；滚动摘要折入 `previous_summary`。

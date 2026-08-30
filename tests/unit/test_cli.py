@@ -649,7 +649,7 @@ def test_pick_state_checkbox_and_radio() -> None:
     from coding_agent.cli.picker import PickItem, PickState
 
     items = tuple(
-        PickItem(name=f"s{i}", detail="d", origin="发行", checked=False) for i in range(9)
+        PickItem(name=f"s{i}", detail="d", origin="", checked=False) for i in range(9)
     )
     state = PickState(kind="skill", title="Skill", hint="", items=items, multi=True, max_checked=8)
     for _ in range(8):
@@ -659,8 +659,8 @@ def test_pick_state_checkbox_and_radio() -> None:
     assert blocked.warn
     assert sum(1 for item in blocked.items if item.checked) == 8
     radio_items = (
-        PickItem("default", "", "发行", True),
-        PickItem("blob", "", "用户", False),
+        PickItem("default", "", "", True),
+        PickItem("blob", "", "", False),
     )
     radio = PickState(kind="mascot", title="立绘包", hint="", items=radio_items, multi=False)
     radio = radio.moved(1).toggled()
@@ -693,6 +693,9 @@ def test_tui_picker_overlay_lists_builtin_skills() -> None:
     console.print(render_frame(view, chrome=WorkspaceChrome(version="2.16.1"), width=80))
     out = console.export_text()
     assert "frontend-design" in out
+    assert "tdd" in out
+    assert "发行" not in out
+    assert "~/.wavecode" not in out
     assert "[ ]" in out
     view.toggle_picker()
     console.print(render_frame(view, chrome=WorkspaceChrome(version="2.16.1"), width=80))
@@ -717,9 +720,12 @@ def test_dispatch_slash_help_and_quit() -> None:
     assert "/model" in help_out.body
     assert "/think on|off" in help_out.body
     assert "/mascot" in help_out.body
-    assert ".wavecode/mascots" in help_out.body
+    assert "打开立绘包列表" in help_out.body
+    assert ".wavecode/mascots" not in help_out.body
     assert "/skill" in help_out.body
-    assert "~/.wavecode/skills" in help_out.body
+    assert "打开 skill 列表" in help_out.body
+    assert "~/.wavecode/skills" not in help_out.body
+    assert "发行" not in help_out.body
     assert "/term" not in help_out.body
     assert "/vim" in help_out.body
     assert "/undo" in help_out.body
@@ -863,7 +869,6 @@ def test_dispatch_slash_model_lists_and_rejects_args() -> None:
     assert "vision" not in listed.body
     assert "账户" not in listed.body
     assert "thinking" not in listed.body
-    assert "请输入 /model 打开勾选列表。" in listed.body
     extra = dispatch_slash("/model deepseek-v4-pro", session, settings)
     assert extra.kind == "warn"
     assert extra.body == "请输入 /model 打开勾选列表。"
@@ -931,8 +936,9 @@ def test_dispatch_slash_mascot_lists_and_switches(tmp_path) -> None:
     listed = dispatch_slash("/mascot", session, settings)
     assert listed.kind == "pick"
     assert "default" in listed.body
-    assert "新包放到" in listed.body
-    assert ".wavecode/mascots" in listed.body
+    assert "新包放到" not in listed.body
+    assert "发行" not in listed.body
+    assert ".wavecode/mascots" not in listed.body
     assert "动作" not in listed.body
     assert dispatch_slash("/mascot think", session, settings).kind == "warn"
     assert get_bank().pose == "idle"
@@ -962,9 +968,12 @@ def test_dispatch_slash_skill_lists(tmp_path) -> None:
     session = SimpleNamespace(rebuild_system=lambda: None)
     listed = dispatch_slash("/skill", session, settings)
     assert listed.kind == "pick"
-    assert "/skill" in listed.body
     assert "frontend-design" in listed.body
+    assert "tdd" in listed.body
     assert "[ ]" in listed.body
+    assert "发行" not in listed.body
+    assert "新包放到" not in listed.body
+    assert "~/.wavecode" not in listed.body
     assert dispatch_slash("/skill frontend-design", session, settings).kind == "warn"
     assert get_skills().active == ()
     assert dispatch_slash("/skill nope", session, settings).kind == "warn"
@@ -1063,7 +1072,7 @@ def test_tui_skill_and_mascot_open_picker_and_confirm() -> None:
     picker = view.snapshot().picker
     assert picker is not None
     assert picker.kind == "skill"
-    assert {item.name for item in picker.items} >= {"frontend-design"}
+    assert {item.name for item in picker.items} >= {"frontend-design", "tdd"}
     first = picker.items[0].name
     tui._apply_picker(tui._pick.feed(b" "), editor)
     tui._apply_picker(tui._pick.feed(b"\r"), editor)

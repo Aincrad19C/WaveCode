@@ -182,8 +182,8 @@ wavemio run -           # 从 stdin 读任务
 | `/quit` `/exit` `/q` | 告别（短 `idle`/挥手）后退出 |
 | `/model` | 打开模型勾选列表（只显示 id；不含视觉模型；带参数则 warn） |
 | `/think on\|off` | 切换 thinking；当前模型不支持时 warn，且不出现在 `/help` |
-| `/mascot` | 打开立绘包勾选列表。新包放到 `~/.wavecode/mascots/<包名>/` 或工作区 `.wavecode/mascots/<包名>/`；启动时复制 `default` |
-| `/skill` | 打开 skill 勾选列表。新包放到 `~/.wavecode/skills/<名>/` |
+| `/mascot` | 打开立绘包勾选列表 |
+| `/skill` | 打开 skill 勾选列表 |
 
 未知 `/xxx`：warn，不送进模型。
 
