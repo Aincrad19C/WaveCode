@@ -34,6 +34,7 @@
   - 可配：`deepseek-v4-pro`（质量优先）；运行时 `/model` 勾选切换（有密钥则 `GET /models`，只列文本模型 id，不含视觉）
   - 兼容别名：若用户配置了已退役的 `deepseek-chat`，启动时打印警告并映射到 `deepseek-v4-flash` + `thinking.disabled`。
   - 无 thinking 的模型：HUD / `/help` / `/status` 不显示 thinking 开关。
+- **模式**：`ask` / `plan` / `agent`（见 [14-modes.md](./14-modes.md)）。默认 agent。输入框最前着色显示；`/mode` 切换。plan 用只读工具摸清仓库、逐项确认后留下内部 `# 计划` 文档。
 - **API**：
   - Base URL：`https://api.deepseek.com`
   - 路径：`POST /chat/completions`（`/v1` 也可，实现时统一写成 `base_url.rstrip('/') + '/chat/completions'`）

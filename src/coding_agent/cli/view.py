@@ -26,6 +26,7 @@ class ViewSnapshot:
     placeholder: str
     focus: str
     picker: PickState | None
+    complete_index: int
 
 
 class ChatView:
@@ -41,6 +42,8 @@ class ChatView:
         self._placeholder = "在下方输入任务。Enter 发送，Ctrl+C 离开，/help 查看命令。"
         self._focus = "input"
         self._picker: PickState | None = None
+        self._complete_index = 0
+        self._complete_prefix = ""
 
     def append(self, kind: str, text: str, *, ok: bool = True, title: str = "") -> None:
         with self._lock:
@@ -61,8 +64,17 @@ class ChatView:
             self._busy = busy
 
     def set_input(self, text: str) -> None:
+        raw = (text or "").replace("█", "")
+        prefix = raw if raw.startswith("/") and not any(ch.isspace() for ch in raw) else ""
         with self._lock:
             self._input = text
+            if prefix != self._complete_prefix:
+                self._complete_index = 0
+                self._complete_prefix = prefix
+
+    def set_placeholder(self, text: str) -> None:
+        with self._lock:
+            self._placeholder = text
 
     def scroll_up(self, steps: int = 3) -> None:
         with self._lock:
@@ -96,6 +108,12 @@ class ChatView:
             if self._picker is not None:
                 self._picker = self._picker.nudged(delta)
 
+    def move_complete(self, delta: int, count: int) -> None:
+        if count <= 0:
+            return
+        with self._lock:
+            self._complete_index = (self._complete_index + delta) % count
+
     def set_focus(self, name: str) -> None:
         with self._lock:
             self._focus = name if name in {"input", "files", "changes", "text"} else "input"
@@ -111,4 +129,5 @@ class ChatView:
                 placeholder=self._placeholder,
                 focus=self._focus,
                 picker=self._picker,
+                complete_index=self._complete_index,
             )

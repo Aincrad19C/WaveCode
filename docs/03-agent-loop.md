@@ -171,6 +171,8 @@ def run(self, user_text: str) -> str:
 
 实现时允许拆私有方法：`_call_model`、`_handle_tools`、`_handle_no_tools`，但控制流不得改变。
 
+`_build_request` 的 `tools` 随 `Settings.mode` 过滤（14）：ask / plan 只带只读四件。状态机本身不变。
+
 ## 4. 不变量（测试必须锁住）
 
 1. 每次 LLM 调用前，历史里所有 `assistant.tool_calls` 都已有对应 `tool` 消息（id 一一匹配）。违反时 DeepSeek 会 400。

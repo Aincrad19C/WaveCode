@@ -19,9 +19,18 @@ UI_WOOD_DEEP = "#6B3F24"
 UI_ERR = "#FF7B7B"
 UI_TOOL = "#5EB5E0"
 
+MODE_COLORS = {
+    "ask": UI_ICE,
+    "plan": UI_WARN,
+    "agent": UI_OK,
+}
+
 THEME = Theme(
     {
         "prompt": f"bold {UI_CYAN}",
+        "mode.ask": f"bold {UI_ICE}",
+        "mode.plan": f"bold {UI_WARN}",
+        "mode.agent": f"bold {UI_OK}",
         "title": f"bold {UI_FOAM}",
         "thinking": f"italic {UI_ICE}",
         "reasoning": f"italic {UI_ICE}",

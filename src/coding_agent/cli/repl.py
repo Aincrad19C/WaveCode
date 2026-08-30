@@ -9,6 +9,7 @@ from __future__ import annotations
 from rich.console import Console
 from rich.text import Text
 
+from coding_agent.agent.mode import parse_mode
 from coding_agent.agent.session import AgentSession
 from coding_agent.cli.branding import GLYPH_WAVE, PRODUCT_NAME, PROMPT
 from coding_agent.cli.chrome import ocean_panel, wave_strip
@@ -50,12 +51,13 @@ class Repl:
 
     def _read_input(self) -> str:
         lines: list[str] = []
-        prompt = PROMPT
+        mode = parse_mode(self.settings.mode) or "agent"
+        prompt = f"[mode.{mode}]{mode}[/] [prompt]{PROMPT}[/prompt]"
         while True:
-            line = self.console.input(f"[prompt]{prompt}[/prompt]")
+            line = self.console.input(prompt)
             if line.endswith("\\"):
                 lines.append(line[:-1])
-                prompt = f"{GLYPH_WAVE} … "
+                prompt = f"[mode.{mode}]{mode}[/] [prompt]{GLYPH_WAVE} … [/prompt]"
                 continue
             lines.append(line)
             return "\n".join(lines)

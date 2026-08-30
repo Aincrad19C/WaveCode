@@ -30,14 +30,25 @@ class ToolExecutor:
         timeout_s: float,
         output_limit: int,
         parallel_readonly: bool = False,
+        mode: str = "agent",
     ) -> None:
         self._registry = registry
         self.workspace = workspace
         self._ctx = ToolContext(workspace=workspace, timeout_s=timeout_s, output_limit=output_limit)
         self._parallel_readonly = parallel_readonly
+        self.mode = mode
 
     def execute_one(self, call: ToolCallRequest, sink: EventSink) -> ToolResult:
         sink.on_event(ToolExecutionStarted(call=call))
+        if self.mode in {"ask", "plan"} and call.name not in READONLY_TOOLS:
+            result = ToolResult(
+                tool_call_id=call.id,
+                name=call.name,
+                ok=False,
+                content=f"当前是 {self.mode} 模式，不能使用 {call.name}。",
+            )
+            sink.on_event(ToolExecutionFinished(result=result))
+            return result
         try:
             tool = self._registry.get(call.name)
         except UnknownToolError as exc:

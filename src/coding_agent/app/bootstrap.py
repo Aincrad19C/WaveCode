@@ -14,6 +14,7 @@ import httpx
 from dotenv import load_dotenv
 
 from coding_agent.agent.loop import AgentLoop
+from coding_agent.agent.mode import allowed_tool_names
 from coding_agent.agent.session import AgentSession
 from coding_agent.app.system_prompt import build_system_prompt
 from coding_agent.config.settings import Settings
@@ -133,6 +134,7 @@ def build_session(settings: Settings, sinks: list[EventSink] | None = None) -> A
         timeout_s=settings.bash_timeout_s,
         output_limit=settings.tool_output_max_chars,
         parallel_readonly=settings.parallel_readonly_tools,
+        mode=settings.mode,
     )
 
     estimator = HeuristicTokenEstimator()
@@ -161,9 +163,10 @@ def build_session(settings: Settings, sinks: list[EventSink] | None = None) -> A
         role=Role.SYSTEM,
         content=build_system_prompt(
             workspace_root=str(workspace.root),
-            tool_names=registry.names(),
+            tool_names=registry.names(allowed_tool_names(settings.mode)),
             skill_catalog=skills.catalog(),
             active_skills=skills.active_bodies(),
+            mode=settings.mode,
         ),
     )
     context = ContextManager(

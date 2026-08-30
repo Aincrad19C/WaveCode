@@ -10,6 +10,7 @@ from rich.text import Text
 
 from coding_agent.cli.branding import GLYPH_WAVE, PRODUCT_NAME
 from coding_agent.cli.chrome import activity_line, ocean_banner, ocean_panel
+from coding_agent.cli.markdown import assistant_markdown
 from coding_agent.cli.sidebar import get_sidebar
 from coding_agent.cli.sprites.bank import get_bank
 from coding_agent.cli.theme import UI_CYAN, UI_ERR, UI_ICE, UI_PRIMARY
@@ -80,7 +81,9 @@ class RichEventSink:
         self._stop_status()
         if event.text:
             self.console.print()
-            self.console.print(ocean_panel(event.text, title=PRODUCT_NAME, border=UI_CYAN))
+            self.console.print(
+                ocean_panel(assistant_markdown(event.text), title=PRODUCT_NAME, border=UI_CYAN)
+            )
 
     def _on_AgentWarned(self, event: AgentWarned) -> None:
         self._stop_status()

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from coding_agent.agent.loop import AgentLoop
+from coding_agent.agent.mode import allowed_tool_names, is_plan_document
 from coding_agent.app.system_prompt import build_system_prompt
 from coding_agent.context.manager import ContextManager
 from coding_agent.domain.events import SessionStarted
@@ -16,12 +17,17 @@ class AgentSession:
         self.loop = loop
         self.context = context
         self.sink = sink
+        self.plan_document = ""
 
     def start(self) -> None:
         self.sink.on_event(SessionStarted())
 
     def ask(self, user_text: str) -> str:
-        return self.loop.run(user_text)
+        result = self.loop.run(user_text)
+        mode = getattr(getattr(self.loop, "settings", None), "mode", "agent")
+        if mode == "plan" and is_plan_document(result):
+            self.plan_document = result.strip()
+        return result
 
     def reset(self) -> None:
         self.context.store().reset_keeping_system()
@@ -35,10 +41,14 @@ class AgentSession:
         registry = getattr(self.loop, "registry", None)
         if executor is None or registry is None:
             return
+        settings = getattr(self.loop, "settings", None)
+        mode = getattr(settings, "mode", "agent") if settings is not None else "agent"
         content = build_system_prompt(
             workspace_root=str(executor.workspace.root),
-            tool_names=registry.names(),
+            tool_names=registry.names(allowed_tool_names(mode)),
             skill_catalog=skills.catalog(),
             active_skills=skills.active_bodies(),
+            mode=mode,
+            plan_document=self.plan_document,
         )
         self.context.store().replace_system(ChatMessage(role=Role.SYSTEM, content=content))

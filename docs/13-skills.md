@@ -77,6 +77,8 @@ def build_system_prompt(
     tool_names: Sequence[str],
     skill_catalog: Sequence[tuple[str, str]] = (),
     active_skills: Sequence[tuple[str, str]] = (),
+    mode: str = "agent",
+    plan_document: str = "",
 ) -> str:
 ```
 

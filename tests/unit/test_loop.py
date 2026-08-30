@@ -6,6 +6,8 @@ import pytest
 
 import coding_agent.agent.loop as loop_module
 from coding_agent.agent.loop import AgentLoop
+from coding_agent.agent.mode import allowed_tool_names
+from coding_agent.agent.session import AgentSession
 from coding_agent.agent.state import LoopState
 from coding_agent.app.system_prompt import build_system_prompt
 from coding_agent.config.settings import Settings
@@ -57,6 +59,7 @@ def build_loop(
     executor = ToolExecutor(
         registry, workspace,
         timeout_s=settings.bash_timeout_s, output_limit=settings.tool_output_max_chars,
+        mode=settings.mode,
     )
     estimator = HeuristicTokenEstimator()
     send_budget = compact_budget
@@ -64,8 +67,11 @@ def build_loop(
         send_budget = settings.max_context_tokens - settings.completion_reserve_tokens
     system = ChatMessage(
         role=Role.SYSTEM,
-        content=build_system_prompt(workspace_root=str(workspace.root),
-                                    tool_names=registry.names()),
+        content=build_system_prompt(
+            workspace_root=str(workspace.root),
+            tool_names=registry.names(allowed_tool_names(settings.mode)),
+            mode=settings.mode,
+        ),
     )
     truncating = TruncatingContextPolicy(
         send_budget=send_budget,
@@ -321,3 +327,29 @@ def test_sync_runtime_settings_updates_budget_and_caps(tmp_path: Path) -> None:
     )
     assert turns._max == 12
     assert overflow._max == 20000
+
+
+def test_plan_mode_omits_write_tools_from_request(tmp_path: Path) -> None:
+    llm = ScriptedLLM([assistant_text("ok")])
+    sink = RecordingSink()
+    settings = make_settings(workdir=tmp_path, mode="plan")
+    loop = build_loop(llm, tmp_path, sink, settings)
+    loop.run("add auth")
+    names = [schema["function"]["name"] for schema in llm.calls[0].tools]
+    assert "write_file" not in names
+    assert "edit_file" not in names
+    assert "bash" not in names
+    assert "read_file" in names
+
+
+def test_plan_mode_captures_document_and_ignores_questions(tmp_path: Path) -> None:
+    llm = ScriptedLLM([assistant_text("用哪个框架？\n1. Flask\n2. FastAPI")])
+    sink = RecordingSink()
+    settings = make_settings(workdir=tmp_path, mode="plan")
+    loop = build_loop(llm, tmp_path, sink, settings)
+    session = AgentSession(loop, loop.context, sink)
+    session.ask("做登录")
+    assert session.plan_document == ""
+    llm.script.append(assistant_text("# 计划\n改 a.py"))
+    session.ask("2")
+    assert session.plan_document.startswith("# 计划")

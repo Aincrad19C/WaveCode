@@ -23,6 +23,7 @@ from rich.table import Table
 from rich.text import Text
 
 from coding_agent import __version__
+from coding_agent.agent.mode import parse_mode, placeholder_for
 from coding_agent.agent.session import AgentSession
 from coding_agent.cli.boot import (
     BOOT_DURATION_S,
@@ -42,12 +43,22 @@ from coding_agent.cli.chrome import (
     wave_strip,
     workspace_hud,
 )
-from coding_agent.cli.commands import SlashOutcome, apply_setting_items, dispatch_slash
+from coding_agent.cli.commands import (
+    SlashOutcome,
+    SlashSpec,
+    apply_mode,
+    apply_setting_items,
+    dispatch_slash,
+    filled_command,
+    slash_matches,
+)
 from coding_agent.cli.editor import KeyAction, LineEditor, NavKeys, PickerKeys
 from coding_agent.cli.handoff import file_open_argv
 from coding_agent.cli.hub import TAB_LABELS, TABS, get_hub
+from coding_agent.cli.markdown import assistant_markdown, markdown_line_count
 from coding_agent.cli.picker import (
     mascot_picker,
+    mode_picker,
     model_picker,
     render_picker,
     setting_picker,
@@ -57,6 +68,7 @@ from coding_agent.cli.sidebar import get_sidebar
 from coding_agent.cli.sprites.bank import get_bank
 from coding_agent.cli.sprites.pack import SPRITE_SIZE, ensure_user_packs
 from coding_agent.cli.theme import (
+    MODE_COLORS,
     UI_CYAN,
     UI_DEEP,
     UI_ERR,
@@ -81,6 +93,7 @@ _GUTTER = 1
 _INPUT_MAX_BODY = 6
 _INPUT_BAR_CELLS = 8
 _INPUT_CHROME = 4  # panel borders + horizontal padding
+_COMPLETE_MAX = 8
 
 
 def _session_cwd(session: AgentSession, settings: Settings) -> Path:
@@ -165,6 +178,7 @@ class OceanFrame:
                 git_branch=detect_git_branch(cwd),
                 version=__version__,
                 root=str(root),
+                mode=self.settings.mode,
             )
         return self._chrome or WorkspaceChrome(version=__version__)
 
@@ -179,7 +193,12 @@ def render_frame(
     rail = (_MASCOT_WIDTH + _GUTTER) if split else 0
     main_w = max(24, inner_w - rail)
     input_inner = max(8, main_w - _INPUT_CHROME)
-    lines, hint = _input_viewport(snap, input_inner)
+    lines, hint = _input_viewport(snap, input_inner, mode=chrome.mode)
+    matches = _complete_items(snap, thinking=chrome.show_thinking)
+    complete_h = 0
+    if matches:
+        vis_n = min(_COMPLETE_MAX, len(matches))
+        complete_h = 2 + vis_n
     layout = Layout()
     layout.split_column(
         Layout(name="wave", size=1),
@@ -213,6 +232,7 @@ def render_frame(
         Layout(name="tabs", size=1),
         Layout(name="content", ratio=1),
         Layout(name="status", size=1),
+        *([Layout(name="complete", size=complete_h)] if complete_h else []),
         Layout(name="input", size=2 + max(1, len(lines))),
     )
     main["hud"].update(_Hud(chrome, snap))
@@ -223,8 +243,12 @@ def render_frame(
         main["content"].update(_TextPane())
     else:
         main["content"].update(_ChatPane(view))
-    main["status"].update(_StatusBar(view))
-    main["input"].update(_InputBar(lines, hint, focused=snap.focus == "input"))
+    main["status"].update(_StatusBar(view, thinking=chrome.show_thinking))
+    if complete_h:
+        main["complete"].update(_CompleteMenu(matches, snap.complete_index))
+    main["input"].update(
+        _InputBar(lines, hint, focused=snap.focus == "input", mode=chrome.mode)
+    )
     frame = Layout()
     frame.split_column(
         Layout(name="north", size=1),
@@ -474,8 +498,9 @@ class _TextPane:
 
 
 class _StatusBar:
-    def __init__(self, view: ChatView) -> None:
+    def __init__(self, view: ChatView, *, thinking: bool = False) -> None:
         self.view = view
+        self.thinking = thinking
 
     def __rich__(self) -> Table:
         snap = self.view.snapshot()
@@ -489,6 +514,8 @@ class _StatusBar:
             left = Text(f" {GLYPH_WAVE} 就绪", style=UI_ICE)
         if snap.picker is not None:
             right = Text("j/k 移动  ·  空格勾选  ·  Enter 确认  ·  Esc 取消", style="muted")
+        elif _complete_items(snap, thinking=self.thinking):
+            right = Text("↑↓ 选择  ·  Enter 补全  ·  再按 Enter 发送", style="muted")
         elif snap.focus == "files":
             right = Text(
                 "j/k 滚轮  ·  Enter 展开/打开  ·  d 改动  ·  Tab Changes",
@@ -507,18 +534,69 @@ class _StatusBar:
         return row
 
 
+def _complete_items(snap: ViewSnapshot, *, thinking: bool) -> tuple[SlashSpec, ...]:
+    if snap.picker is not None or snap.busy or snap.focus != "input":
+        return ()
+    return slash_matches(snap.input_buffer, thinking=thinking)
+
+
+class _CompleteMenu:
+    def __init__(self, items: tuple[SlashSpec, ...], index: int) -> None:
+        self.items = items
+        self.index = index
+
+    def __rich_console__(self, console: Console, options) -> Iterator[RenderableType]:
+        n = len(self.items)
+        vis_n = min(_COMPLETE_MAX, n)
+        idx = 0 if n <= 0 else max(0, min(self.index, n - 1))
+        start = 0
+        if n > vis_n:
+            start = min(max(0, idx - vis_n // 2), n - vis_n)
+        body = Text()
+        for i, spec in enumerate(self.items[start : start + vis_n]):
+            row = start + i
+            if i:
+                body.append("\n")
+            selected = row == idx
+            pointer = "▸ " if selected else "  "
+            style = f"bold {UI_FOAM}" if selected else UI_ICE
+            body.append(f"{pointer}{spec.name}", style=style)
+            body.append(f"  {spec.summary}", style="muted")
+        yield Panel(
+            body,
+            title=cute_title("命令"),
+            title_align="left",
+            box=box.SQUARE,
+            border_style=UI_CYAN,
+            padding=(0, 1),
+            expand=True,
+        )
+
+
 class _InputBar:
-    def __init__(self, lines: tuple[str, ...], hint: str, *, focused: bool = True) -> None:
+    def __init__(
+        self, lines: tuple[str, ...], hint: str, *, focused: bool = True, mode: str = "agent"
+    ) -> None:
         self.lines = lines
         self.hint = hint
         self.focused = focused
+        self.mode = parse_mode(mode) or "agent"
 
     def __rich_console__(self, console: Console, options) -> Iterator[RenderableType]:
-        body = Text(style="prompt", no_wrap=True, overflow="crop")
+        color = MODE_COLORS.get(self.mode, UI_OK)
+        pad = cell_len(self.mode) + 1 + cell_len(PROMPT)
+        body = Text(no_wrap=True, overflow="crop")
         for i, line in enumerate(self.lines):
             if i:
                 body.append("\n")
-            body.append(line)
+            if i == 0:
+                body.append(self.mode, style=f"bold {color}")
+                body.append(" ")
+                body.append(PROMPT, style="prompt")
+                body.append(line, style="prompt")
+            else:
+                body.append(" " * pad)
+                body.append(line, style="prompt")
         yield Panel(
             body,
             box=box.DOUBLE,
@@ -599,19 +677,32 @@ def _input_scroll_hint(offset: int, visible: int, total: int) -> str:
     return "  ".join(parts)
 
 
-def _input_viewport(snap: ViewSnapshot, inner_width: int) -> tuple[tuple[str, ...], str]:
+_PICKER_INPUT = {
+    "skill": "勾选 skill",
+    "mascot": "勾选立绘包",
+    "model": "勾选模型",
+    "setting": "设置",
+    "mode": "勾选模式",
+}
+
+
+def _input_viewport(
+    snap: ViewSnapshot, inner_width: int, *, mode: str = "agent"
+) -> tuple[tuple[str, ...], str]:
     hub = get_hub()
+    prefix = f"{parse_mode(mode) or 'agent'} {PROMPT}"
+    wrap_w = max(4, inner_width - cell_len(prefix))
     if snap.picker is not None:
-        title = "勾选 skill" if snap.picker.kind == "skill" else "勾选立绘包"
-        return (f"{GLYPH_WAVE} {title}",), "空格勾选  Enter 确认  Esc 取消"
+        title = _PICKER_INPUT.get(snap.picker.kind, "勾选")
+        return (title,), "空格勾选  Enter 确认  Esc 取消"
     if snap.busy:
-        return (f"{GLYPH_WAVE} 思考中，Ctrl+C 取消",), ""
+        return ("思考中，Ctrl+C 取消",), ""
     if hub.tab == "text" and snap.focus not in {"files", "changes", "input"}:
         title = hub.file_title or "文本"
         total = len(hub.file_lines) or 1
         vis = 12
-        return (f"{GLYPH_WAVE} {title}",), _input_scroll_hint(hub.file_scroll, vis, total)
-    wrapped = _wrap_cells(PROMPT + snap.input_buffer, max(8, inner_width))
+        return (title,), _input_scroll_hint(hub.file_scroll, vis, total)
+    wrapped = _wrap_cells(snap.input_buffer, wrap_w)
     visible, offset = _input_window(wrapped, _INPUT_MAX_BODY)
     return tuple(visible), _input_scroll_hint(offset, len(visible), len(wrapped))
 
@@ -658,7 +749,7 @@ def _item_height(item: ChatItem, inner: int) -> int:
     if item.kind == "user":
         return 2 + lines
     if item.kind == "assistant":
-        return 2 + lines
+        return 2 + markdown_line_count(item.text, text_w)
     return 2 + lines
 
 
@@ -704,7 +795,7 @@ def _render_item(item: ChatItem, width: int) -> RenderableType:
             item.text, title=item.title or item.kind, border=UI_ICE, width=width
         )
     return Panel(
-        Text(item.text, style="assistant"),
+        assistant_markdown(item.text),
         title=f"{GLYPH_WAVE} {PRODUCT_NAME}",
         title_align="left",
         box=box.SIMPLE,
@@ -777,6 +868,7 @@ class OceanTui:
         if self.console.size.height < 12:
             self.console.height = 24
         editor = LineEditor()
+        self.view.set_placeholder(placeholder_for(self.settings.mode))
         self.view.set_input(editor.display())
         fd = sys.stdin.fileno()
         self._fd = fd
@@ -949,6 +1041,9 @@ class OceanTui:
         if title == "setting":
             self.view.set_picker(setting_picker(self.settings))
             return
+        if title == "mode":
+            self.view.set_picker(mode_picker(current=self.settings.mode))
+            return
         skills = get_skills()
         skills.set_workdir(self.settings.workdir)
         self.view.set_picker(skill_picker(skills))
@@ -979,6 +1074,15 @@ class OceanTui:
             kind, body = apply_setting_items(self.session, self.settings, picker.items)
             self.view.append("note" if kind != "warn" else "error", body)
             return
+        if picker.kind == "mode":
+            names = picker.checked_names()
+            if not names:
+                self.view.append("error", "请输入 /mode 打开勾选列表。")
+                return
+            kind, body = apply_mode(self.session, self.settings, names[0])
+            self.view.set_placeholder(placeholder_for(self.settings.mode))
+            self.view.append("note" if kind != "warn" else "error", body)
+            return
         skills = get_skills()
         skills.set_workdir(self.settings.workdir)
         kind, body = skills.replace_active(list(picker.checked_names()))
@@ -993,6 +1097,12 @@ class OceanTui:
                 if self._on_interrupt(editor):
                     return "quit"
                 continue
+            if action.kind == "wheel":
+                matches = self._slash_matches(editor)
+                if matches:
+                    delta = 1 if int(action.text or "0") > 0 else -1
+                    self.view.move_complete(delta, len(matches))
+                    continue
             if self._handle_global(action):
                 continue
             if busy:
@@ -1001,7 +1111,19 @@ class OceanTui:
                 if not editor.buffer:
                     return "quit"
                 continue
-            if action.kind == "page_up":
+            if action.kind == "up":
+                matches = self._slash_matches(editor)
+                if matches:
+                    self.view.move_complete(-1, len(matches))
+                else:
+                    editor.history_step(-1)
+            elif action.kind == "down":
+                matches = self._slash_matches(editor)
+                if matches:
+                    self.view.move_complete(1, len(matches))
+                else:
+                    editor.history_step(1)
+            elif action.kind == "page_up":
                 self.view.scroll_up()
             elif action.kind == "page_down":
                 self.view.scroll_down()
@@ -1010,9 +1132,32 @@ class OceanTui:
             elif action.kind == "cycle_focus":
                 self.view.set_focus("files")
             elif action.kind == "submit":
+                if self._accept_complete(editor):
+                    continue
+                editor.accept_submit()
                 if self._submit(action.text):
                     return "quit"
         return None
+
+    def _slash_matches(self, editor: LineEditor):
+        snap = self.view.snapshot()
+        if snap.picker is not None or snap.busy or snap.focus != "input":
+            return ()
+        return slash_matches(
+            editor.buffer, thinking=supports_thinking(self.settings.deepseek_model)
+        )
+
+    def _accept_complete(self, editor: LineEditor) -> bool:
+        matches = self._slash_matches(editor)
+        if not matches:
+            return False
+        idx = self.view.snapshot().complete_index
+        spec = matches[max(0, min(idx, len(matches) - 1))]
+        filled = filled_command(spec)
+        if editor.buffer in {spec.name, filled}:
+            return False
+        editor.complete_with(filled)
+        return True
 
     def _apply_nav(self, actions: list[KeyAction], editor: LineEditor) -> str | None:
         for action in actions:
@@ -1115,6 +1260,7 @@ class OceanTui:
             get_bank().set_pose("idle")
             get_sidebar().clear_session()
             self.view.set_focus("input")
+        self.view.set_placeholder(placeholder_for(self.settings.mode))
         self._show_outcome(outcome)
         return False
 

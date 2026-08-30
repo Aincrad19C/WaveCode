@@ -1,7 +1,7 @@
 # 设计文档目录（第一版）
 
 本目录是 **WaveCode**（CLI 编程智能体）的设计与实现规格。  
-当前版本：**[v2.25.0](./CHANGELOG.md)**。每次改仓库必须先按 Changelog 规则升版本再落笔。  
+当前版本：**[v3.2.0](./CHANGELOG.md)**。每次改仓库必须先按 Changelog 规则升版本再落笔。  
 实现者必须按下列顺序阅读，并 **严格按 `10-implementation-spec.md` 落盘**，不得改用任何 Agent 框架。
 
 | 顺序 | 文档 | 用途 |
@@ -21,6 +21,7 @@
 | 11 | [11-wire-format.md](./11-wire-format.md) | DeepSeek messages JSON 契约（防 400） |
 | 12 | [12-whalechan-pixel.md](./12-whalechan-pixel.md) | 终端半块像素渲染：可行性与精灵规格 |
 | 13 | [13-skills.md](./13-skills.md) | `SKILL.md` 投放目录与 `/skill` 装载 |
+| 14 | [14-modes.md](./14-modes.md) | ask / plan / agent 会话模式 |
 
 题目原文：[推免考核题目学生版.pdf](./推免考核题目学生版.pdf)
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from coding_agent.agent.mode import MODE_DETAILS, MODES, allowed_tool_names, parse_mode
 from coding_agent.agent.session import AgentSession
 from coding_agent.cli.branding import PRODUCT_NAME
 from coding_agent.cli.picker import CONTEXT_MAX, TURNS_MAX, TURNS_MIN, PickItem, context_min
@@ -15,12 +16,67 @@ from coding_agent.llm.catalog import discover_models, list_text, supports_thinki
 from coding_agent.skills.bank import get_skills
 
 _USAGE_MODEL = "请输入 /model 打开勾选列表。"
+_USAGE_MODE = "用法：/mode  或  /mode ask|plan|agent"
 _USAGE_THINK = "用法：/think on|off"
 _USAGE_SETTING = "请输入 /setting 打开设置。"
 _USAGE_SETTING_ARGS = (
     "用法：/setting thinking on|off  /setting stream on|off  "
     "/setting turns 数字  /setting context 数字"
 )
+
+
+@dataclass(frozen=True, slots=True)
+class SlashSpec:
+    name: str
+    summary: str
+    thinking: bool = False
+    takes_arg: bool = False
+
+
+SLASH_SPECS: tuple[SlashSpec, ...] = (
+    SlashSpec("/help", "列出命令"),
+    SlashSpec("/reset", "清空对话"),
+    SlashSpec("/undo", "还原本任务的文件改动"),
+    SlashSpec("/tools", "列出工具"),
+    SlashSpec("/status", "工作区与模型"),
+    SlashSpec("/model", "打开模型列表"),
+    SlashSpec("/mode", "切换 ask / plan / agent", takes_arg=True),
+    SlashSpec("/setting", "打开设置", takes_arg=True),
+    SlashSpec("/think", "切换 thinking", thinking=True, takes_arg=True),
+    SlashSpec("/mascot", "打开立绘列表"),
+    SlashSpec("/skill", "打开 skill 列表"),
+    SlashSpec("/vim", "用外部编辑器打开", takes_arg=True),
+    SlashSpec("/quit", "退出"),
+    SlashSpec("/exit", "退出"),
+    SlashSpec("/q", "退出"),
+)
+
+
+def slash_prefix(buffer: str) -> str:
+    """Command-name fragment while the user is still typing a slash command."""
+    text = (buffer or "").replace("█", "")
+    if not text.startswith("/") or any(ch.isspace() for ch in text):
+        return ""
+    return text
+
+
+def slash_matches(buffer: str, *, thinking: bool) -> tuple[SlashSpec, ...]:
+    prefix = slash_prefix(buffer)
+    if not prefix:
+        return ()
+    needle = prefix.lower()
+    matched = [
+        spec
+        for spec in SLASH_SPECS
+        if (not spec.thinking or thinking) and spec.name.startswith(needle)
+    ]
+    exact = [spec for spec in matched if spec.name == needle]
+    rest = [spec for spec in matched if spec.name != needle]
+    return tuple(exact + rest)
+
+
+def filled_command(spec: SlashSpec) -> str:
+    return spec.name + (" " if spec.takes_arg else "")
 
 
 def help_text(settings: Settings) -> str:
@@ -34,6 +90,7 @@ def help_text(settings: Settings) -> str:
   /tools         列出工具名称与说明
   /status        工作区、模型、轮次与 token 估计
   /model         打开模型勾选列表
+  /mode          切换 ask / plan / agent
   /setting       打开设置
 {think_line}  /mascot        打开立绘包列表
   /skill         打开 skill 列表
@@ -45,7 +102,7 @@ Tab 在输入、文件、Changes 之间循环。F1 对话，F2 文本，Ctrl+T �
 文件栏：j/k 或滚轮选择，Enter 展开目录或打开文件，常见语言高亮。
 Changes：+ 新增为绿，− 删除为红，~ 为修改；Enter 打开红绿对照，而非原始 diff。
 /undo 还原最近一次任务中 write_file 与 edit_file 改过的文件。新任务一旦再次改文件，上一窗口即失效。
-PgUp / PgDn 滚动对话，↑ / ↓ 翻历史输入。
+PgUp / PgDn 滚动对话。输入 / 时 ↑↓ 选择命令、Enter 补全；否则 ↑↓ 翻历史输入。
 长输入会折行；超出输入框时用 ← → / Home / End 带动底部滚动条。"""
 
 
@@ -71,7 +128,7 @@ def dispatch_slash(command: str, session: AgentSession, settings: Settings) -> S
             return _undo_files(session)
         case "/tools":
             lines = []
-            for schema in session.loop.registry.schemas():
+            for schema in session.loop.registry.schemas(allowed_tool_names(settings.mode)):
                 fn = schema["function"]
                 lines.append(f"{fn['name']}\n  {fn['description']}")
             return SlashOutcome(kind="tools", title="tools", body="\n".join(lines))
@@ -87,6 +144,7 @@ def dispatch_slash(command: str, session: AgentSession, settings: Settings) -> S
             body = (
                 f"工作区  {cwd}\n"
                 f"模型    {settings.deepseek_model}{think}\n"
+                f"模式    {settings.mode}\n"
                 f"轮次    {state.turn}\n"
                 f"估计    {state.estimated_prompt_tokens} tokens"
             )
@@ -115,6 +173,11 @@ def dispatch_slash(command: str, session: AgentSession, settings: Settings) -> S
                 title="model",
                 body=list_text(models, current=settings.deepseek_model),
             )
+        case "/mode":
+            if not arg.strip():
+                return SlashOutcome(kind="pick", title="mode", body=mode_list_text(settings))
+            kind, body = apply_mode(session, settings, arg)
+            return SlashOutcome(kind=kind, body=body)
         case "/mascot":
             bank = get_bank()
             bank.set_workdir(settings.workdir)
@@ -148,6 +211,33 @@ def _undo_files(session: AgentSession) -> SlashOutcome:
     listing = "、".join(paths[:12])
     extra = f" 等 {len(paths)} 个" if len(paths) > 12 else ""
     return SlashOutcome(kind="note", body=f"已还原 {listing}{extra}。")
+
+
+def mode_list_text(settings: Settings) -> str:
+    current = parse_mode(settings.mode) or "agent"
+    lines = [f"当前模式  {current}", ""]
+    for name in MODES:
+        mark = "✓" if name == current else " "
+        lines.append(f"  [{mark}] {name}  {MODE_DETAILS[name]}")
+    return "\n".join(lines)
+
+
+def apply_mode(session: AgentSession, settings: Settings, raw: str) -> tuple[str, str]:
+    parsed = parse_mode(raw)
+    if parsed is None:
+        return "warn", _USAGE_MODE
+    settings.mode = parsed  # type: ignore[assignment]
+    loop = getattr(session, "loop", None)
+    loop_settings = getattr(loop, "settings", None)
+    if loop_settings is not None:
+        loop_settings.mode = parsed
+    sync = getattr(loop, "sync_runtime_settings", None)
+    if callable(sync):
+        sync()
+    rebuild = getattr(session, "rebuild_system", None)
+    if callable(rebuild):
+        rebuild()
+    return "note", f"模式 = {parsed}"
 
 
 def setting_list_text(settings: Settings) -> str:

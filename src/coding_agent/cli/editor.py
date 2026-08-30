@@ -194,10 +194,10 @@ class LineEditor:
         if mapped is not None:
             return mapped
         if code == "A":
-            self._history(-1)
-        elif code == "B":
-            self._history(1)
-        elif code == "C":
+            return KeyAction("up")
+        if code == "B":
+            return KeyAction("down")
+        if code == "C":
             self.cursor = min(len(self.buffer), self.cursor + 1)
         elif code == "D":
             self.cursor = max(0, self.cursor - 1)
@@ -228,7 +228,7 @@ class LineEditor:
         self.buffer = self.buffer[:i] + self.buffer[self.cursor :]
         self.cursor = i
 
-    def _history(self, delta: int) -> None:
+    def history_step(self, delta: int) -> None:
         if not self.history:
             return
         if self._hist_i is None:
@@ -244,15 +244,23 @@ class LineEditor:
         self.buffer = self.history[self._hist_i]
         self.cursor = len(self.buffer)
 
+    def complete_with(self, command: str) -> None:
+        self.buffer = command
+        self.cursor = len(command)
+        self._hist_i = None
+
+    def accept_submit(self) -> None:
+        text = self.buffer
+        self.clear()
+        if text.strip():
+            self.history.append(text)
+
     def _submit(self) -> KeyAction:
         text = self.buffer
         if text.endswith("\\") and not text.endswith("\\\\"):
             self.buffer = text[:-1] + "\n"
             self.cursor = len(self.buffer)
             return KeyAction("redraw")
-        self.clear()
-        if text.strip():
-            self.history.append(text)
         return KeyAction("submit", text)
 
 
@@ -362,7 +370,7 @@ class NavKeys:
 
 
 class PickerKeys:
-    """Key parser for the /skill, /mascot, /model, and /setting overlay."""
+    """Key parser for the /skill, /mascot, /model, /mode, and /setting overlay."""
 
     def __init__(self) -> None:
         self._pending = b""

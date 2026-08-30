@@ -9,6 +9,7 @@ stop via composable termination conditions, never the model vendor's runtime.
 
 from __future__ import annotations
 
+from coding_agent.agent.mode import allowed_tool_names
 from coding_agent.agent.state import LoopState
 from coding_agent.config.settings import Settings
 from coding_agent.context.manager import ContextManager
@@ -71,6 +72,7 @@ class AgentLoop:
         setter = getattr(self.context, "set_send_budget", None)
         if callable(setter):
             setter(send)
+        self.executor.mode = getattr(self.settings, "mode", "agent")
 
         for condition in getattr(self.termination, "_conditions", ()):
             if isinstance(condition, MaxTurnsCondition):
@@ -241,7 +243,7 @@ class AgentLoop:
     # -- private helpers (control flow identical to docs/03 §3) --------------
 
     def _build_request(self, state: LoopState) -> ModelRequest:
-        schemas = self.registry.schemas()
+        schemas = self.registry.schemas(allowed_tool_names(self.settings.mode))
         messages, estimate, note = self.context.build_request_messages(schemas)
         before = state.estimated_prompt_tokens
         state.estimated_prompt_tokens = estimate

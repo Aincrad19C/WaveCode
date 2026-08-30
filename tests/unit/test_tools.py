@@ -270,6 +270,25 @@ def test_executor_missing_required_arg(tmp_path: Path) -> None:
     assert not result.ok and "missing required argument: path" in result.content
 
 
+def test_executor_blocks_write_in_plan_mode(tmp_path: Path) -> None:
+    registry = ToolRegistry()
+    registry.register(WriteFileTool())
+    executor = ToolExecutor(
+        registry, Workspace(tmp_path), timeout_s=5, output_limit=1000, mode="plan"
+    )
+    result = executor.execute_one(
+        ToolCallRequest(
+            id="x",
+            name="write_file",
+            arguments_json='{"path": "a.py", "content": "x"}',
+        ),
+        RecordingSink(),
+    )
+    assert not result.ok
+    assert "plan" in result.content
+    assert not (tmp_path / "a.py").exists()
+
+
 # -- clip ------------------------------------------------------------------------------------
 
 def test_clip_keeps_head_and_tail() -> None:

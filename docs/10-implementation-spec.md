@@ -119,6 +119,7 @@ Coding_Agent/
       pixel.py               # HalfBlockRenderer
       animator.py            # SpriteBank, FramePlayer, WhalechanAnimator
       renderer.py
+      markdown.py            # 助手回复 Markdown
       repl.py
       app.py
       sprites/
@@ -197,9 +198,9 @@ testpaths = ["tests"]
 
 ## 4. 系统提示词 `app/system_prompt.py`
 
-函数：`build_system_prompt(*, workspace_root: str, tool_names: Sequence[str], skill_catalog: Sequence[tuple[str, str]] = (), active_skills: Sequence[tuple[str, str]] = ()) -> str`
+函数：`build_system_prompt(*, workspace_root, tool_names, skill_catalog=(), active_skills=(), mode="agent", plan_document="") -> str`
 
-在原模板 Rules 之后按 13 §5 追加 Available skills / Active skills 段（空则省略）。
+按 `mode` 换规则（14）。ask / plan 的 `tool_names` 只有只读四件。有 `plan_document` 时追加 Active plan 段。在 Rules 之后按 13 §5 追加 Available skills / Active skills 段（空则省略）。
 
 完整英文模板（实现时原样使用，可微调标点，不可删行为约束）：
 
@@ -354,7 +355,7 @@ class ScriptedLLM(LLMClient):
 - [ ] one-shot 能创建文件（工作区可见）
 - [ ] 模型 tool_calls 被执行，失败也会继续
 - [ ] Ctrl+C 取消
-- [ ] `/reset` `/help` `/skill` `/model` `/setting` `/undo` `/quit` 工作
+- [ ] `/reset` `/help` `/skill` `/model` `/mode` `/setting` `/undo` `/quit` 工作
 - [ ] `.wavemio/logs/*.jsonl` 产生
 - [ ] `bash` 子进程看不到 `DEEPSEEK_API_KEY`
 
@@ -383,13 +384,16 @@ class ScriptedLLM(LLMClient):
 | `llm/stream.py` | StreamAssembler |
 | `parsing/pipeline.py` | Native 然后 Fallback |
 | `agent/loop.py` | 03 状态机，可拆私有方法但行为一致 |
+| `agent/mode.py` | ask / plan / agent 名称、只读集合、计划文档判定 |
 | `context/policy.py` | TruncatingContextPolicy + SummarizingContextPolicy |
 | `context/summarizer.py` | ConversationSummarizer 端口 |
 | `llm/summarize.py` | LlmConversationSummarizer（无 tools / 无 stream / 无 thinking） |
 | `skills/pack.py` | 发现与解析 SKILL.md，含发行 packs |
 | `skills/bank.py` | 本会话装载集合、`/skill` 文案 |
 | `tools/workspace.py` | 路径沙箱 + `/undo` 快照 |
-| `cli/picker.py` | `/skill` `/mascot` `/model` `/setting` 全屏列表 |
+| `cli/picker.py` | `/skill` `/mascot` `/model` `/mode` `/setting` 全屏列表 |
+| `cli/commands.py` | `/mode` 等斜杠分发；输入 `/` 时的命令补全列表 |
+| `cli/markdown.py` | 助手回复 Markdown 渲染（Rich Markdown，代码块 ansi_dark） |
 | `cli/app.py` | argparse + main() |
 | `cli/branding.py` | `PRODUCT_NAME = "Wavemio"`、`CLI_NAME = "wavemio"` |
 | `cli/pixel.py` | HalfBlockRenderer |
@@ -406,12 +410,13 @@ class ScriptedLLM(LLMClient):
 | workdir | WAVEMIO_WORKDIR | cwd |
 | stream | WAVEMIO_STREAM | true |
 | thinking | WAVEMIO_THINKING | false |
+| mode | WAVEMIO_MODE | agent |
 | max_turns | WAVEMIO_MAX_TURNS | 30 |
 | debug | WAVEMIO_DEBUG | false |
 | ascii_fallback | WAVEMIO_ASCII | false |
 | summarize_context | WAVEMIO_SUMMARIZE_CONTEXT | true |
 
-CLI 参数覆盖 Settings（workdir、model、think、max-turns、verbose）。
+CLI 参数覆盖 Settings（workdir、model、mode、think、max-turns、verbose）。
 
 `deepseek-chat` → 警告 + 当作 `deepseek-v4-flash`。  
 `deepseek-reasoner` → 警告 + `deepseek-v4-flash` 且 `thinking=True`。

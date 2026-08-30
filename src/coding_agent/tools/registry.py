@@ -21,8 +21,12 @@ class ToolRegistry:
         except KeyError:
             raise UnknownToolError(f"no such tool: {name}") from None
 
-    def schemas(self) -> list[dict]:
-        return [tool.schema() for tool in self._tools.values()]
+    def schemas(self, allowed: frozenset[str] | None = None) -> list[dict]:
+        return [
+            tool.schema()
+            for tool in self._tools.values()
+            if allowed is None or tool.name in allowed
+        ]
 
-    def names(self) -> tuple[str, ...]:
-        return tuple(self._tools)
+    def names(self, allowed: frozenset[str] | None = None) -> tuple[str, ...]:
+        return tuple(name for name in self._tools if allowed is None or name in allowed)

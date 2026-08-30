@@ -146,7 +146,7 @@ self.estimator.ratio = clamp(0.6 * old + 0.4 * ratio, 0.6, 1.8)  # 若 estimator
 
 ## 6. 系统提示词位置
 
-system **只存一条**，在 `ConversationStore` 构造时写入，来自 `app/system_prompt.py` 的 `build_system_prompt(workspace, tool_names)`。  
+system **只存一条**，在 `ConversationStore` 构造时写入，来自 `app/system_prompt.py` 的 `build_system_prompt(..., mode=..., plan_document=...)`。模式切换时 `replace_system`。  
 不要每轮改写 system 塞进「当前文件列表」（费 token 且易过期）。让模型用 `list_dir`。
 
 可以在 system 里放 **静态** 信息：工作区绝对路径、工具名单、行为准则。

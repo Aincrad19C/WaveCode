@@ -26,6 +26,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--workdir", type=Path, default=None, help="workspace root (default cwd)")
     parser.add_argument("--model", default=None, help="model id")
     parser.add_argument("--think", action="store_true", help="enable thinking mode")
+    parser.add_argument(
+        "--mode",
+        choices=("ask", "plan", "agent"),
+        default=None,
+        help="ask, plan, or agent (default agent)",
+    )
     parser.add_argument("--no-stream", action="store_true", help="disable SSE streaming")
     parser.add_argument("--verbose", action="store_true", help="debug logging")
     parser.add_argument("--max-turns", type=int, default=None, help="max LLM calls per task")
@@ -67,6 +73,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         overrides["deepseek_model"] = args.model
     if args.think:
         overrides["thinking"] = True
+    if args.mode is not None:
+        overrides["mode"] = args.mode
     if args.no_stream:
         overrides["stream"] = False
     if args.max_turns is not None:

@@ -1,4 +1,4 @@
-"""Fullscreen checkbox / radio list for /skill, /mascot, /model, and /setting."""
+"""Fullscreen checkbox / radio list for /skill, /mascot, /model, /mode, and /setting."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from rich.console import Group, RenderableType
 from rich.panel import Panel
 from rich.text import Text
 
+from coding_agent.agent.mode import MODE_DETAILS, MODES, parse_mode
 from coding_agent.cli.sprites.bank import MascotBank
 from coding_agent.cli.theme import UI_CYAN, UI_FOAM, UI_ICE, UI_PRIMARY, UI_WARN
 from coding_agent.config.settings import Settings
@@ -170,6 +171,24 @@ def mascot_picker(bank: MascotBank) -> PickState:
     return PickState(
         kind="mascot",
         title="立绘包",
+        hint="空格勾选  Enter 确认  Esc 取消",
+        items=items,
+        cursor=cursor,
+        multi=False,
+        max_checked=1,
+    )
+
+
+def mode_picker(*, current: str) -> PickState:
+    current_id = parse_mode(current) or "agent"
+    items = tuple(
+        PickItem(name=name, detail=MODE_DETAILS[name], origin="", checked=name == current_id)
+        for name in MODES
+    )
+    cursor = next((i for i, item in enumerate(items) if item.checked), 0)
+    return PickState(
+        kind="mode",
+        title="模式",
         hint="空格勾选  Enter 确认  Esc 取消",
         items=items,
         cursor=cursor,

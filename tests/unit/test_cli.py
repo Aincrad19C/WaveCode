@@ -599,16 +599,22 @@ def test_line_editor_submit_utf8_history_and_continue() -> None:
     editor = LineEditor()
     actions = editor.feed("你好".encode() + b"\r")
     assert [(a.kind, a.text) for a in actions] == [("submit", "你好")]
+    editor.accept_submit()
 
     editor.feed(b"abc\\\r")
     assert "\n" in editor.buffer
     actions = editor.feed(b"def\r")
     assert actions[0].kind == "submit"
     assert actions[0].text == "abc\ndef"
+    editor.accept_submit()
 
-    editor.feed(b"\x1b[A")
+    actions = editor.feed(b"\x1b[A")
+    assert actions[0].kind == "up"
+    editor.history_step(-1)
     assert editor.buffer == "abc\ndef"
-    editor.feed(b"\x1b[A")
+    actions = editor.feed(b"\x1b[A")
+    assert actions[0].kind == "up"
+    editor.history_step(-1)
     assert editor.buffer == "你好"
 
 
@@ -769,6 +775,7 @@ def test_dispatch_slash_help_and_quit() -> None:
     assert help_out.kind == "help"
     assert "/reset" in help_out.body
     assert "/model" in help_out.body
+    assert "/mode" in help_out.body
     assert "/setting" in help_out.body
     assert "/think on|off" in help_out.body
     assert "/mascot" in help_out.body
@@ -784,6 +791,7 @@ def test_dispatch_slash_help_and_quit() -> None:
     assert "/mascot 包名" not in help_out.body
     assert "/skill 名" not in help_out.body
     assert "/model 名" not in help_out.body
+    assert "/mode 名" not in help_out.body
     assert "改的不管" not in help_out.body
     assert dispatch_slash("/term", dummy, settings).kind == "warn"  # type: ignore[arg-type]
     assert dispatch_slash("/vim src/a.py", dummy, settings).body == "src/a.py"  # type: ignore[arg-type]
@@ -889,7 +897,9 @@ def test_dispatch_slash_tools_status_think_reset() -> None:
             state=LoopState(),
             settings=settings,
             registry=SimpleNamespace(
-                schemas=lambda: [{"function": {"name": "bash", "description": "run a command"}}]
+                schemas=lambda allowed=None: [
+                    {"function": {"name": "bash", "description": "run a command"}}
+                ]
             ),
         ),
     )
@@ -898,6 +908,7 @@ def test_dispatch_slash_tools_status_think_reset() -> None:
     assert dispatch_slash("/think", session, settings).kind == "warn"
     assert "bash" in dispatch_slash("/tools", session, settings).body
     assert "工作区" in dispatch_slash("/status", session, settings).body
+    assert "模式" in dispatch_slash("/status", session, settings).body
     note = dispatch_slash("/think on", session, settings)
     assert note.body == "thinking = on"
     assert settings.thinking is True
@@ -1013,6 +1024,40 @@ def test_dispatch_slash_model_lists_and_rejects_args() -> None:
     assert extra.kind == "warn"
     assert extra.body == "请输入 /model 打开勾选列表。"
     assert settings.deepseek_model == "deepseek-v4-flash"
+
+
+def test_dispatch_slash_mode_lists_and_applies() -> None:
+    from types import SimpleNamespace
+
+    from coding_agent.agent.state import LoopState
+    from coding_agent.cli.commands import dispatch_slash
+    from fakes.settings import make_settings
+
+    settings = make_settings()
+    rebuilt: list[int] = []
+    session = SimpleNamespace(
+        loop=SimpleNamespace(
+            state=LoopState(),
+            settings=settings,
+            sync_runtime_settings=lambda: None,
+        ),
+        rebuild_system=lambda: rebuilt.append(1),
+        reset=lambda: None,
+    )
+    listed = dispatch_slash("/mode", session, settings)
+    assert listed.kind == "pick"
+    assert listed.title == "mode"
+    assert "ask" in listed.body
+    assert "plan" in listed.body
+    assert "agent" in listed.body
+    assert "发行" not in listed.body
+    note = dispatch_slash("/mode plan", session, settings)
+    assert note.kind == "note"
+    assert settings.mode == "plan"
+    assert rebuilt == [1]
+    assert dispatch_slash("/mode nope", session, settings).kind == "warn"
+    assert dispatch_slash("/mode 问答", session, settings).kind == "note"
+    assert settings.mode == "ask"
 
 
 def test_dispatch_slash_hides_think_when_model_has_no_thinking() -> None:
@@ -1309,6 +1354,72 @@ def test_tui_setting_open_picker_and_confirm() -> None:
     assert any("轮次=31" in item.text for item in view.snapshot().items)
 
 
+def test_tui_mode_open_picker_and_confirm() -> None:
+    from types import SimpleNamespace
+
+    from coding_agent.agent.state import LoopState
+    from coding_agent.cli.editor import LineEditor
+    from coding_agent.cli.tui import OceanTui
+    from coding_agent.cli.view import ChatView
+    from fakes.settings import make_settings
+
+    view = ChatView()
+    settings = make_settings()
+    rebuilt: list[int] = []
+    session = SimpleNamespace(
+        loop=SimpleNamespace(
+            state=LoopState(),
+            settings=settings,
+            sync_runtime_settings=lambda: None,
+        ),
+        rebuild_system=lambda: rebuilt.append(1),
+        reset=lambda: None,
+    )
+    tui = OceanTui(session, None, settings, view)  # type: ignore[arg-type]
+    editor = LineEditor()
+    assert tui._slash("/mode") is False
+    picker = view.snapshot().picker
+    assert picker is not None
+    assert picker.kind == "mode"
+    assert [item.name for item in picker.items] == ["ask", "plan", "agent"]
+    assert any(item.name == "agent" and item.checked for item in picker.items)
+    tui._apply_picker(tui._pick.feed(b"k"), editor)
+    tui._apply_picker(tui._pick.feed(b" "), editor)
+    tui._apply_picker(tui._pick.feed(b"\r"), editor)
+    assert view.snapshot().picker is None
+    assert settings.mode == "plan"
+    assert rebuilt == [1]
+    assert any("模式 = plan" in item.text for item in view.snapshot().items)
+
+
+def test_input_bar_shows_colored_mode_prefix() -> None:
+    from io import StringIO
+
+    from rich.console import Console
+
+    from coding_agent.cli.chrome import WorkspaceChrome
+    from coding_agent.cli.tui import render_frame
+    from coding_agent.cli.view import ChatView
+
+    view = ChatView()
+    view.set_input("hello█")
+    buf = StringIO()
+    console = Console(
+        file=buf,
+        width=80,
+        height=24,
+        force_terminal=True,
+        color_system=None,
+        record=True,
+    )
+    chrome = WorkspaceChrome(mode="plan", version="3.0.0")
+    console.print(render_frame(view, chrome=chrome, width=80))
+    out = console.export_text()
+    assert "plan" in out
+    assert "wavecode" in out
+    assert "hello" in out
+
+
 def test_tui_tab_focuses_files_and_nav_moves(tmp_path) -> None:
     from types import SimpleNamespace
 
@@ -1425,7 +1536,7 @@ def test_input_bar_grows_and_shows_scrollbar_in_frame() -> None:
     from coding_agent.cli.view import ChatView
 
     view = ChatView()
-    view.set_input(("w" * 90) + "█")
+    view.set_input(("w" * 60) + "█")
     chrome = WorkspaceChrome(version="2.3.0")
     buf = StringIO()
     console = Console(
@@ -1438,7 +1549,7 @@ def test_input_bar_grows_and_shows_scrollbar_in_frame() -> None:
     )
     console.print(render_frame(view, chrome=chrome, width=40))
     out = console.export_text()
-    assert out.count("w") >= 90
+    assert out.count("w") >= 60
     assert f"{CLI_NAME} ›" in out
 
     view.set_input(("w" * 500) + "█")

@@ -7,6 +7,7 @@ the WAVEMIO_ prefix. The api key never appears in repr/str output.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -33,6 +34,7 @@ class Settings(BaseSettings):
     )
 
     workdir: Path = Field(default_factory=Path.cwd)
+    mode: Literal["ask", "plan", "agent"] = "agent"
     stream: bool = True
     thinking: bool = False
     reasoning_effort: str = "high"

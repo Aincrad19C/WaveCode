@@ -7,6 +7,7 @@
 - 工具对模型的接口是 JSON Schema；对 Python 的接口是 `execute(args, ctx) -> str`。
 - 失败返回字符串错误，不抛到 CLI。
 - 输出超长由 `Tool.run` 按 `settings.tool_output_max_chars` 截断（与上下文策略双保险）。
+- ask / plan 模式下 `ToolExecutor` 拒绝 `write_file` / `edit_file` / `bash`（即使 schema 被滤掉后解析兜底仍抽出调用）。见 14。
 
 ## 1.1 `/undo`
 

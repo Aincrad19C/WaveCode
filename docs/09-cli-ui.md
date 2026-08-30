@@ -35,7 +35,7 @@
 
 Rich Theme 键：`prompt, title, thinking, reasoning, assistant, tool, success, error, muted, mascot`。
 
-禁止默认彩虹乱色。代码块 `Syntax(..., theme="ansi_dark")`，外边框仍用蓝色 Panel。
+禁止默认彩虹乱色。代码块 `Syntax(..., theme="ansi_dark")`，外边框仍用蓝色 Panel。助手最终回复用 Rich Markdown（标题、列表、粗体、围栏代码块同样 `ansi_dark`）；用户输入与斜杠输出仍为纯文本。
 
 ## 2. 吉祥物：像素鲸鱼娘（动态）
 
@@ -157,8 +157,8 @@ wavemio ❯
 ## 5. argparse
 
 ```
-wavemio [--workdir PATH] [--model NAME] [--think] [--no-stream] [--verbose]
-        [--max-turns N] [--timeout S]
+wavemio [--workdir PATH] [--model NAME] [--mode ask|plan|agent] [--think] [--no-stream]
+        [--verbose] [--max-turns N] [--timeout S]
         {run,repl} ...
 
 wavemio                 # 默认 repl
@@ -181,12 +181,15 @@ wavemio run -           # 从 stdin 读任务
 | `/status` | 工作区、模型、turn、token 估计；无 thinking 的模型不写 thinking 行 |
 | `/quit` `/exit` `/q` | 告别（短 `idle`/挥手）后退出 |
 | `/model` | 打开模型勾选列表（只显示 id；不含视觉模型；带参数则 warn） |
+| `/mode` | 切换 ask / plan / agent。全屏单选；也可 `/mode plan`。输入框最前用颜色标出当前模式 |
 | `/setting` | 打开设置：thinking、流式、轮次、上下文长度。全屏空格切换、←→ 调节；也可 `/setting thinking on` 这类写法 |
 | `/think on\|off` | 切换 thinking；当前模型不支持时 warn，且不出现在 `/help` |
 | `/mascot` | 打开立绘包勾选列表 |
 | `/skill` | 打开 skill 勾选列表 |
 
 未知 `/xxx`：warn，不送进模型。
+
+全屏输入 `/` 后，输入框上方列出匹配的命令。↑↓ 选择，Enter 补全（不立刻执行）；命令已完整时 Enter 才发送。`/mode` `/setting` `/think` `/vim` 补全后带一个空格。没有斜杠前缀时 ↑↓ 仍翻历史输入。
 
 ## 6. 提示符
 

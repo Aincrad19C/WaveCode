@@ -512,11 +512,13 @@ class AgentLoop:
 
 ```python
 class AgentSession:
+    plan_document: str = ""  # plan 模式产出的内部 # 计划 文档
+
     def __init__(self, loop: AgentLoop, context: ContextManager, sink: EventSink): ...
     def ask(self, user_text: str) -> str: ...
     def reset(self) -> None: ...
     def rebuild_system(self) -> None:
-        """按当前 SkillBank 重写 system，不清对话。/skill 成功后调用。"""
+        """按当前 SkillBank、mode、plan_document 重写 system，不清对话。"""
 ```
 
 REPL 持有一个 Session。
@@ -563,6 +565,7 @@ class Settings(BaseSettings):
     )
 
     workdir: Path = Field(default_factory=Path.cwd)
+    mode: Literal["ask", "plan", "agent"] = "agent"
     stream: bool = True
     thinking: bool = False
     temperature: float = 0.2

@@ -60,6 +60,7 @@ class WorkspaceChrome:
     git_branch: str = ""
     version: str = ""
     root: str = ""  # workspace root for the file tree; empty → workdir
+    mode: str = "agent"
 
 
 def short_home_path(path: Path | str) -> str:
