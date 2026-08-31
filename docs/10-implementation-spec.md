@@ -391,7 +391,7 @@ class ScriptedLLM(LLMClient):
 | `skills/pack.py` | 发现与解析 SKILL.md，含发行 packs |
 | `skills/bank.py` | 本会话装载集合、`/skill` 文案 |
 | `tools/workspace.py` | 路径沙箱 + `/undo` 快照 |
-| `cli/picker.py` | `/skill` `/mascot` `/model` `/mode` `/setting` 全屏列表 |
+| `cli/picker.py` | `/skill` `/mascot` `/model` `/mode` `/setting` 全屏列表；plan 选项列表 |
 | `cli/commands.py` | `/mode` 等斜杠分发；输入 `/` 时的命令补全列表 |
 | `cli/markdown.py` | 助手回复 Markdown 渲染（Rich Markdown，代码块 ansi_dark） |
 | `cli/app.py` | argparse + main() |
@@ -411,7 +411,7 @@ class ScriptedLLM(LLMClient):
 | stream | WAVEMIO_STREAM | true |
 | thinking | WAVEMIO_THINKING | false |
 | mode | WAVEMIO_MODE | agent |
-| max_turns | WAVEMIO_MAX_TURNS | 30 |
+| max_turns | WAVEMIO_MAX_TURNS | 60 |
 | debug | WAVEMIO_DEBUG | false |
 | ascii_fallback | WAVEMIO_ASCII | false |
 | summarize_context | WAVEMIO_SUMMARIZE_CONTEXT | true |

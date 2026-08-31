@@ -570,7 +570,7 @@ class Settings(BaseSettings):
     thinking: bool = False
     temperature: float = 0.2
     max_tokens: int = 4096
-    max_turns: int = 30
+    max_turns: int = 60
     max_consecutive_failures: int = 3
     max_wallclock_s: float = 600
     max_context_tokens: int = 32000

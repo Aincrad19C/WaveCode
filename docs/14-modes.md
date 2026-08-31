@@ -17,8 +17,8 @@
 不在一次 `run()` 里卡住等人确认：模型用「无工具 + 非空 content」自然结束一轮，TUI/REPL 回到输入框。这就是逐题确认。
 
 1. 用户在 plan 模式写下模糊目标。
-2. 模型可用只读工具摸仓库，然后**本条回复只问一个问题**。有把握时给 2–4 个编号选项，并写明也可以直接输入自己的答案。
-3. 用户在输入框打序号或自定义文字，Enter。对话历史保留，下一轮继续。
+2. 模型可用只读工具摸仓库，然后**本条回复只问一个问题**。格式必须是一行 `问题：…`，下面只有 2–4 个 `1.` `2.` `3.` 选项。禁止一次抛出多个问题，禁止题号和选项号套在一起。
+3. 全屏在问题后弹出选项列表，↑↓ 选、Enter 确认（把「2. 选项原文」作为下一轮用户输入）。Esc 后仍可自己打字。REPL 里直接打数字或自己写。
 4. 信息足够后，停止提问，输出 Markdown，**第一行必须是** `# 计划`。正文含：目标、现状、做法、要改的文件、步骤、风险、如何验证。对话里的助手最终回复按 Markdown 渲染（标题、列表、粗体、代码块）。
 5. `AgentSession.ask` 若看到这份文档，写入 `session.plan_document`（内存，不写进仓库）。`/mode agent` 时 `rebuild_system` 把该文档注入 system。随后用户说「按这个做」或直接下达任务即可落地。
 
@@ -37,7 +37,7 @@
 
 | 位置 | 做什么 |
 |------|--------|
-| `agent/mode.py` | 名称、别名、只读集合、计划文档判定、占位文案、颜色 |
+| `agent/mode.py` | 名称、别名、只读集合、计划文档判定、面试问题解析、占位文案 |
 | `config/settings.py` | `mode: ask\|plan\|agent` |
 | `app/system_prompt.py` | 按 mode 换规则；可选注入 `plan_document` |
 | `tools/registry.py` | `schemas(allowed)` / `names(allowed)` |
@@ -45,6 +45,6 @@
 | `agent/loop.py` | `_build_request` 只带允许的 tools；`sync_runtime_settings` 同步 executor.mode |
 | `agent/session.py` | `plan_document`；plan 自然结束时捕获；`rebuild_system` 带 mode |
 | `cli/commands.py` | `/mode` |
-| `cli/picker.py` | `mode_picker` |
-| `cli/tui.py` | 输入条前缀着色；助手回复 Markdown；斜杠命令补全 |
+| `cli/picker.py` | `mode_picker`；plan 选项列表 |
+| `cli/tui.py` | 输入条前缀着色；助手回复 Markdown；斜杠命令补全；plan 选项确认 |
 | `cli/repl.py` | 提示符同样前缀 |

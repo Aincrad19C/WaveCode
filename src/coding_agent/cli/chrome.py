@@ -54,7 +54,7 @@ class WorkspaceChrome:
     show_thinking: bool = True
     stream: bool = True
     turn: int = 0
-    max_turns: int = 30
+    max_turns: int = 60
     tokens: int = 0
     max_tokens: int = 32000
     git_branch: str = ""
@@ -90,7 +90,26 @@ def ellipsize_left(text: str, width: int) -> str:
 
 
 def detect_git_branch(workdir: Path) -> str:
-    """Read ``.git/HEAD`` without spawning git (safe to call every session)."""
+    """Read ``HEAD`` without spawning git. Walk up like git does."""
+    try:
+        here = Path(workdir).resolve()
+    except OSError:
+        here = Path(workdir)
+    seen: set[Path] = set()
+    current: Path | None = here
+    while current is not None and current not in seen:
+        seen.add(current)
+        name = _branch_in_git_dir(current)
+        if name:
+            return name
+        parent = current.parent
+        if parent == current:
+            break
+        current = parent
+    return ""
+
+
+def _branch_in_git_dir(workdir: Path) -> str:
     git = workdir / ".git"
     if git.is_file():
         try:
@@ -104,6 +123,8 @@ def detect_git_branch(workdir: Path) -> str:
                 git = workdir / git
         else:
             return ""
+    elif not git.is_dir():
+        return ""
     head = git / "HEAD"
     if not head.is_file():
         return ""
@@ -150,7 +171,7 @@ def workspace_hud(
     busy: bool = False,
     width: int = 80,
 ) -> Table:
-    """HUD with original field names: 目录 / 模型 / thinking / 流式 / git / 轮次."""
+    """HUD: 目录 / 模型 / git / 流式 / 轮次."""
     path = ellipsize_left(short_home_path(chrome.workdir), max(8, min(28, width - 16)))
     state = "思考中" if busy else "已就绪"
     state_style = UI_WARN if busy else UI_CYAN
@@ -173,13 +194,7 @@ def workspace_hud(
     mid.append(git, style=UI_CYAN if chrome.git_branch else "muted")
 
     bottom = Text()
-    if chrome.show_thinking:
-        think = "on" if chrome.thinking else "off"
-        bottom.append("thinking ", style=UI_ICE)
-        bottom.append(think, style=UI_CYAN if chrome.thinking else "muted")
-        bottom.append("  流式 ", style=UI_ICE)
-    else:
-        bottom.append("流式 ", style=UI_ICE)
+    bottom.append("流式 ", style=UI_ICE)
     bottom.append(stream, style=UI_ICE)
     bottom.append("  轮次 ", style=UI_ICE)
     bottom.append(f"{chrome.turn}/{chrome.max_turns}  ", style=UI_FOAM)

@@ -10,7 +10,7 @@ from rich.console import Group, RenderableType
 from rich.panel import Panel
 from rich.text import Text
 
-from coding_agent.agent.mode import MODE_DETAILS, MODES, parse_mode
+from coding_agent.agent.mode import MODE_DETAILS, MODES, PlanInterview, parse_mode
 from coding_agent.cli.sprites.bank import MascotBank
 from coding_agent.cli.theme import UI_CYAN, UI_FOAM, UI_ICE, UI_PRIMARY, UI_WARN
 from coding_agent.config.settings import Settings
@@ -197,6 +197,25 @@ def mode_picker(*, current: str) -> PickState:
     )
 
 
+def plan_picker(interview: PlanInterview) -> PickState:
+    items = tuple(
+        PickItem(name=str(i), detail=choice, origin="", checked=i == 1)
+        for i, choice in enumerate(interview.choices, 1)
+    )
+    title = interview.question
+    if len(title) > 36:
+        title = title[:35] + "…"
+    return PickState(
+        kind="plan",
+        title=title,
+        hint="↑↓ 选择  Enter 确认  Esc 自己写",
+        items=items,
+        cursor=0,
+        multi=False,
+        max_checked=1,
+    )
+
+
 def setting_picker(settings: Settings) -> PickState:
     items: list[PickItem] = []
     if supports_thinking(settings.deepseek_model):
@@ -256,6 +275,12 @@ def render_picker(state: PickState, width: int, height: int) -> RenderableType:
         if state.kind == "setting":
             label = _SETTING_LABELS.get(item.name, item.name)
             lines.append(f"{pointer}{label}  {item.detail}", style=style or UI_CYAN)
+            continue
+        if state.kind == "plan":
+            label = f"{item.name}. {item.detail}"
+            if len(label) > inner_w - 2:
+                label = label[: max(4, inner_w - 3)] + "…"
+            lines.append(f"{pointer}{label}", style=style or UI_CYAN)
             continue
         mark = "✓" if item.checked else " "
         name = item.name[: max(4, inner_w - 18)]

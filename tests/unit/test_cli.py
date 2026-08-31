@@ -472,7 +472,7 @@ def test_tui_frame_fills_terminal_like_top() -> None:
     assert "DeepSeek" not in out
     assert "目录" in out
     assert "模型" in out
-    assert "thinking" in out
+    assert "thinking" not in out
     assert "流式" in out
     assert "轮次" in out
     assert "✦" not in out
@@ -825,7 +825,12 @@ def test_workspace_path_and_git_branch(tmp_path) -> None:
     git.mkdir()
     (git / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
     assert detect_git_branch(tmp_path) == "main"
-    assert detect_git_branch(tmp_path / "nope") == ""
+    nested = tmp_path / "pkg" / "inner"
+    nested.mkdir(parents=True)
+    assert detect_git_branch(nested) == "main"
+    outside = tmp_path.parent / "no-git-here"
+    outside.mkdir(exist_ok=True)
+    assert detect_git_branch(outside) == ""
     assert usage_bar(0, 100, 10) == "░" * 10
     assert "█" in usage_bar(50, 100, 10)
     doodle = mascot_placeholder(phase=0).plain
@@ -864,6 +869,38 @@ def test_ocean_frame_directory_follows_bash_cwd(tmp_path) -> None:
         settings=make_settings(workdir=tmp_path),
     )
     assert frame._live_chrome().workdir == str(parent)
+
+
+def test_ocean_frame_git_branch_stays_on_workspace_root(tmp_path) -> None:
+    from types import SimpleNamespace
+
+    from coding_agent.agent.state import LoopState
+    from coding_agent.cli.tui import OceanFrame
+    from coding_agent.cli.view import ChatView
+    from coding_agent.tools.workspace import Workspace
+    from fakes.settings import make_settings
+
+    git = tmp_path / ".git"
+    git.mkdir()
+    (git / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
+    sub = tmp_path / "src"
+    sub.mkdir()
+    workspace = Workspace(tmp_path)
+    workspace.cwd = sub
+    session = SimpleNamespace(
+        loop=SimpleNamespace(
+            state=LoopState(),
+            executor=SimpleNamespace(workspace=workspace),
+        )
+    )
+    frame = OceanFrame(
+        ChatView(),
+        session=session,  # type: ignore[arg-type]
+        settings=make_settings(workdir=tmp_path),
+    )
+    chrome = frame._live_chrome()
+    assert chrome.git_branch == "main"
+    assert chrome.workdir == str(sub.resolve())
 
 
 def test_tui_interrupt_at_idle_prompt_quits() -> None:
@@ -1083,7 +1120,7 @@ def test_dispatch_slash_hides_think_when_model_has_no_thinking() -> None:
     assert settings.thinking is True
 
 
-def test_hud_omits_thinking_switch_when_hidden() -> None:
+def test_hud_never_shows_thinking_switch() -> None:
     from io import StringIO
 
     from rich.console import Console
@@ -1092,9 +1129,9 @@ def test_hud_omits_thinking_switch_when_hidden() -> None:
 
     chrome = WorkspaceChrome(
         workdir=".",
-        model="other-chat",
+        model="deepseek-v4-flash",
         thinking=True,
-        show_thinking=False,
+        show_thinking=True,
         version="2.19.0",
     )
     buf = StringIO()
@@ -1390,6 +1427,46 @@ def test_tui_mode_open_picker_and_confirm() -> None:
     assert settings.mode == "plan"
     assert rebuilt == [1]
     assert any("模式 = plan" in item.text for item in view.snapshot().items)
+
+
+def test_plan_picker_opens_and_submits_choice() -> None:
+    from types import SimpleNamespace
+
+    from coding_agent.agent.state import LoopState
+    from coding_agent.cli.editor import LineEditor
+    from coding_agent.cli.tui import OceanTui
+    from coding_agent.cli.view import ChatView
+    from fakes.settings import make_settings
+
+    view = ChatView()
+    view.append(
+        "assistant",
+        "问题：核心定位是什么？\n\n"
+        "1. 在线书城\n"
+        "2. 番茄钟与阅读结合\n"
+        "3. 个人书架\n\n"
+        "回复数字，或自己写。",
+    )
+    asked: list[str] = []
+    settings = make_settings(mode="plan")
+    session = SimpleNamespace(
+        loop=SimpleNamespace(state=LoopState(), settings=settings),
+        ask=lambda text: asked.append(text),
+        reset=lambda: None,
+    )
+    tui = OceanTui(session, None, settings, view)  # type: ignore[arg-type]
+    tui._maybe_open_plan_picker()
+    picker = view.snapshot().picker
+    assert picker is not None
+    assert picker.kind == "plan"
+    assert [item.detail for item in picker.items] == ["在线书城", "番茄钟与阅读结合", "个人书架"]
+    editor = LineEditor()
+    tui._apply_picker(tui._pick.feed(b"j"), editor)
+    tui._apply_picker(tui._pick.feed(b"\r"), editor)
+    assert view.snapshot().picker is None
+    assert tui._worker is not None
+    tui._worker.join(timeout=1)
+    assert asked == ["2. 番茄钟与阅读结合"]
 
 
 def test_input_bar_shows_colored_mode_prefix() -> None:

@@ -65,7 +65,7 @@ wavecode --workdir /path --max-turns 10 --think run "..."
 
 `wavemio` 仍是同一入口的别名。
 
-REPL 斜杠命令：`/help` `/reset` `/undo` `/tools` `/status` `/model` `/mode` `/setting` `/think on|off` `/mascot` `/skill` `/vim` `/quit`。三种模式：`ask`（只读问答）、`plan`（逐项确认后写内部计划）、`agent`（改文件，默认）。输入框最前用颜色标出当前模式。助手最终回复按 Markdown 渲染。输入 `/` 后 ↑↓ 选择命令、Enter 补全。Enter 发送，行末 `\` 续行。Tab 在输入、文件、Changes 之间循环；F1 / F2 / Ctrl+T 切换对话与文本标签。当前模型没有 thinking 时不显示 `/think`。
+REPL 斜杠命令：`/help` `/reset` `/undo` `/tools` `/status` `/model` `/mode` `/setting` `/think on|off` `/mascot` `/skill` `/vim` `/quit`。三种模式：`ask`（只读问答）、`plan`（每次只问一个问题，确认后写内部计划）、`agent`（改文件，默认）。输入框最前用颜色标出当前模式。助手最终回复按 Markdown 渲染。输入 `/` 后 ↑↓ 选择命令、Enter 补全。Enter 发送，行末 `\` 续行。Tab 在输入、文件、Changes 之间循环；F1 / F2 / Ctrl+T 切换对话与文本标签。当前模型没有 thinking 时不显示 `/think`。
 会话日志写入 `<workdir>/.wavecode/logs/<timestamp>.jsonl`（已 gitignore）。
 
 ## 开发与测试

@@ -76,9 +76,6 @@ def build_http_client(timeout_s: float) -> httpx.Client:
     except ValueError as exc:
         rewritten = _http_proxy_from_socks_env()
         if rewritten:
-            logger.warning(
-                "httpx cannot use %s; trying HTTP proxy %s instead", exc, rewritten
-            )
             try:
                 return httpx.Client(timeout=timeout_s, proxy=rewritten, trust_env=False)
             except ValueError:

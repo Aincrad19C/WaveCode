@@ -23,7 +23,7 @@ from rich.table import Table
 from rich.text import Text
 
 from coding_agent import __version__
-from coding_agent.agent.mode import parse_mode, placeholder_for
+from coding_agent.agent.mode import parse_mode, parse_plan_interview, placeholder_for
 from coding_agent.agent.session import AgentSession
 from coding_agent.cli.boot import (
     BOOT_DURATION_S,
@@ -60,6 +60,7 @@ from coding_agent.cli.picker import (
     mascot_picker,
     mode_picker,
     model_picker,
+    plan_picker,
     render_picker,
     setting_picker,
     skill_picker,
@@ -175,7 +176,7 @@ class OceanFrame:
                 max_turns=self.settings.max_turns,
                 tokens=state.estimated_prompt_tokens,
                 max_tokens=self.settings.max_context_tokens,
-                git_branch=detect_git_branch(cwd),
+                git_branch=detect_git_branch(root),
                 version=__version__,
                 root=str(root),
                 mode=self.settings.mode,
@@ -513,7 +514,10 @@ class _StatusBar:
         else:
             left = Text(f" {GLYPH_WAVE} 就绪", style=UI_ICE)
         if snap.picker is not None:
-            right = Text("j/k 移动  ·  空格勾选  ·  Enter 确认  ·  Esc 取消", style="muted")
+            if snap.picker.kind == "plan":
+                right = Text("↑↓ 选择  ·  Enter 确认  ·  Esc 自己写", style="muted")
+            else:
+                right = Text("j/k 移动  ·  空格勾选  ·  Enter 确认  ·  Esc 取消", style="muted")
         elif _complete_items(snap, thinking=self.thinking):
             right = Text("↑↓ 选择  ·  Enter 补全  ·  再按 Enter 发送", style="muted")
         elif snap.focus == "files":
@@ -683,6 +687,7 @@ _PICKER_INPUT = {
     "model": "勾选模型",
     "setting": "设置",
     "mode": "勾选模式",
+    "plan": "↑↓ 选答案，Esc 自己写",
 }
 
 
@@ -859,6 +864,7 @@ class OceanTui:
         self._term_old: object | None = None
         self._nav = NavKeys()
         self._pick = PickerKeys()
+        self._plan_picker_for = ""
 
     def run(self) -> int:
         ensure_user_packs(workdir=self.settings.workdir)
@@ -1083,6 +1089,12 @@ class OceanTui:
             self.view.set_placeholder(placeholder_for(self.settings.mode))
             self.view.append("note" if kind != "warn" else "error", body)
             return
+        if picker.kind == "plan":
+            if not picker.items:
+                return
+            item = picker.items[picker.cursor]
+            self._submit(f"{item.name}. {item.detail}")
+            return
         skills = get_skills()
         skills.set_workdir(self.settings.workdir)
         kind, body = skills.replace_active(list(picker.checked_names()))
@@ -1244,6 +1256,24 @@ class OceanTui:
         finally:
             self.view.set_busy(False)
             self.view.set_status("")
+            self._maybe_open_plan_picker()
+
+    def _maybe_open_plan_picker(self) -> None:
+        if parse_mode(self.settings.mode) != "plan":
+            return
+        items = self.view.snapshot().items
+        if not items or items[-1].kind != "assistant":
+            return
+        text = items[-1].text
+        if text == self._plan_picker_for:
+            return
+        interview = parse_plan_interview(text)
+        if interview is None:
+            return
+        self._plan_picker_for = text
+        get_hub().set_tab("chat")
+        self.view.set_focus("input")
+        self.view.set_picker(plan_picker(interview))
 
     def _slash(self, command: str) -> bool:
         outcome = dispatch_slash(command, self.session, self.settings)

@@ -148,7 +148,7 @@ REPL 中用户连续提问：默认 **同一 Session**（模型能看见上一�
   → 日志过滤器把 Bearer 换成 ***
 ```
 
-Settings 字段见 `10-implementation-spec.md`。默认模型 `deepseek-v4-flash`，`thinking.type=disabled`（工具循环更稳、延迟更低）。`--think` 打开 thinking；打开后 **回灌 assistant 消息时必须带上 `reasoning_content`**（DeepSeek thinking + tools 的官方要求，见其 Tool Calls / Thinking 文档）。
+Settings 字段见 `10-implementation-spec.md`。默认模型 `deepseek-v4-flash`，`thinking.type=disabled`。`--think` 打开 thinking。打开后 **回灌 assistant 消息时必须带上 `reasoning_content`**（DeepSeek thinking + tools 的官方要求，见其 Tool Calls / Thinking 文档）。
 
 ## 8. 与「后端服务」的关系
 

@@ -4,6 +4,7 @@ from coding_agent.agent.mode import (
     allowed_tool_names,
     is_plan_document,
     parse_mode,
+    parse_plan_interview,
     placeholder_for,
 )
 from coding_agent.app.system_prompt import build_system_prompt
@@ -40,6 +41,41 @@ def test_plan_prompt_requires_heading() -> None:
     text = build_system_prompt(workspace_root="/ws", tool_names=["read_file"], mode="plan")
     assert "exactly one question" in text
     assert "# 计划" in text
+    assert "问题：" in text
+    assert "FORBIDDEN" in text
+    assert "You MUST solve programming tasks" not in text
+
+
+def test_parse_plan_interview_one_question() -> None:
+    good = (
+        "问题：这个「番茄书城」的核心定位是什么？\n"
+        "\n"
+        "1. 在线书城（浏览、购买、阅读）\n"
+        "2. 番茄钟与阅读结合\n"
+        "3. 个人书架管理\n"
+        "4. 以上都要\n"
+        "\n"
+        "回复数字，或自己写。\n"
+    )
+    got = parse_plan_interview(good)
+    assert got is not None
+    assert got.question.startswith("这个「番茄书城」")
+    assert got.choices[0].startswith("在线书城")
+    assert len(got.choices) == 4
+
+
+def test_parse_plan_interview_rejects_batch() -> None:
+    batch = (
+        "明白了，确认几个关键点：\n"
+        "1. 这个「番茄书城」的核心定位是什么？\n"
+        "   1. 在线书城\n"
+        "2. 技术栈有偏好吗？\n"
+        "   1. 纯前端\n"
+    )
+    assert parse_plan_interview(batch) is None
+    two_headers = "问题：A？\n1. x\n2. y\n\n问题：B？\n1. p\n2. q\n"
+    assert parse_plan_interview(two_headers) is None
+    assert parse_plan_interview("# 计划\n目标") is None
 
 
 def test_agent_prompt_injects_plan_document() -> None:
@@ -55,4 +91,4 @@ def test_agent_prompt_injects_plan_document() -> None:
 
 
 def test_placeholder_for_plan() -> None:
-    assert "逐项确认" in placeholder_for("plan")
+    assert "每次只问一个问题" in placeholder_for("plan")

@@ -184,11 +184,11 @@ def run(self, user_text: str) -> str:
 
 ## 5. 与 thinking 模式
 
-仅当 `llm/catalog.py` 判定当前模型支持 thinking 时才写入请求体。不支持的模型省略 `thinking` 字段，Loop 视 `thinking_enabled=False`，HUD 不画开关。
+仅当 `llm/catalog.py` 判定当前模型支持 thinking 时才写入请求体。不支持的模型省略 `thinking` 字段，Loop 视 `thinking_enabled=False`。工作区 HUD 不显示 thinking 开关。
 
-`thinking_enabled=False`（默认，且模型支持）：请求带 `"thinking": {"type": "disabled"}`，避免默认 thinking 浪费延迟。
+`thinking_enabled=False`（默认，且模型支持）：请求带 `"thinking": {"type": "disabled"}`。
 
-`thinking_enabled=True`：
+`thinking_enabled=True`（且模型支持）：
 
 - 请求 `"thinking": {"type": "enabled"}`，`reasoning_effort` 用 settings。
 - 流式把 `reasoning_content` 增量发给 UI（灰色斜体），**不要**把推理过程再当 user 消息塞回。

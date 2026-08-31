@@ -157,7 +157,7 @@ wavemio ❯
 ## 5. argparse
 
 ```
-wavemio [--workdir PATH] [--model NAME] [--mode ask|plan|agent] [--think] [--no-stream]
+wavemio [--workdir PATH] [--model NAME] [--mode ask|plan|agent] [--think] [--no-think] [--no-stream]
         [--verbose] [--max-turns N] [--timeout S]
         {run,repl} ...
 
@@ -181,7 +181,7 @@ wavemio run -           # 从 stdin 读任务
 | `/status` | 工作区、模型、turn、token 估计；无 thinking 的模型不写 thinking 行 |
 | `/quit` `/exit` `/q` | 告别（短 `idle`/挥手）后退出 |
 | `/model` | 打开模型勾选列表（只显示 id；不含视觉模型；带参数则 warn） |
-| `/mode` | 切换 ask / plan / agent。全屏单选；也可 `/mode plan`。输入框最前用颜色标出当前模式 |
+| `/mode` | 切换 ask / plan / agent。全屏单选；也可 `/mode plan`。输入框最前用颜色标出当前模式。plan 每次只问一个问题；全屏用 ↑↓ Enter 选选项 |
 | `/setting` | 打开设置：thinking、流式、轮次、上下文长度。全屏空格切换、←→ 调节；也可 `/setting thinking on` 这类写法 |
 | `/think on\|off` | 切换 thinking；当前模型不支持时 warn，且不出现在 `/help` |
 | `/mascot` | 打开立绘包勾选列表 |

@@ -25,7 +25,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("-V", "--version", action="version", version=f"{CLI_NAME} {__version__}")
     parser.add_argument("--workdir", type=Path, default=None, help="workspace root (default cwd)")
     parser.add_argument("--model", default=None, help="model id")
-    parser.add_argument("--think", action="store_true", help="enable thinking mode")
+    think = parser.add_mutually_exclusive_group()
+    think.add_argument("--think", action="store_true", help="enable thinking mode")
+    think.add_argument("--no-think", action="store_true", help="disable thinking mode")
     parser.add_argument(
         "--mode",
         choices=("ask", "plan", "agent"),
@@ -73,6 +75,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         overrides["deepseek_model"] = args.model
     if args.think:
         overrides["thinking"] = True
+    if args.no_think:
+        overrides["thinking"] = False
     if args.mode is not None:
         overrides["mode"] = args.mode
     if args.no_stream:
